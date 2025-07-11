@@ -11,31 +11,44 @@ API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
-# -- Hàm làm sạch text dịch --
+# -- Làm sạch text dịch --
 def cleanup_translation(text):
-    # Xóa phần giải thích hoặc markdown
     text = re.sub(r"\*\*.*?\*\*", "", text)
-    text = re.sub(r"\n+", " ", text)
+    text = re.sub(r"\n+", "\n", text)
     text = re.sub(r"\s{2,}", " ", text)
     return text.strip()
 
-# -- Hàm dịch --
-def translate_zh_to_vi(text_zh):
+# -- Hàm dịch nhiều câu cùng lúc --
+def batch_translate_zh_to_vi(titles):
+    # Chuẩn bị prompt
+    numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
+    prompt = (
+        "Dịch toàn bộ danh sách sau sang tiếng Việt tự nhiên, "
+        "mỗi câu dịch trên một dòng, không thêm bất kỳ chú thích nào:\n\n"
+        + numbered_list
+    )
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
-            {"parts": [{"text": f"Hãy dịch câu sau sang tiếng Việt tự nhiên, chỉ trả về đúng câu đã dịch, không thêm bất cứ chú thích nào: {text_zh}"}]}
+            {"parts": [{"text": prompt}]}
         ]
     }
+    # Gửi request
     response = requests.post(API_URL, headers=headers, json=payload)
     if response.status_code == 200:
         result = response.json()
-        return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        # Làm sạch
+        clean_text = cleanup_translation(raw_text)
+        # Tách từng dòng
+        lines = [l.strip("0123456789. \t") for l in clean_text.split("\n") if l.strip()]
+        return lines
     else:
         print("❌ Lỗi dịch:", response.status_code, response.text)
-        return text_zh
+        # Trả nguyên văn nếu lỗi
+        return titles
 
-# -- Lấy dữ liệu từ JSON API của WeChat --
+# -- Lấy dữ liệu từ JSON API --
 def fetch_articles(url):
     print("🔍 Đang lấy dữ liệu JSON từ WeChat...")
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -64,24 +77,24 @@ def fetch_articles(url):
 if __name__ == "__main__":
     articles = fetch_articles(WECHAT_JSON_URL)
 
+    zh_titles = [a["title"] for a in articles]
+    print("\n🌐 Đang dịch tất cả tiêu đề...")
+    vi_titles = batch_translate_zh_to_vi(zh_titles)
+
     news_list = []
-    for idx, article in enumerate(articles, 1):
-        print(f"\n🌐 [{idx}] Dịch: {article['title']}")
-        translated_raw = translate_zh_to_vi(article["title"])
-        translated = cleanup_translation(translated_raw)
-        # Kiểm tra còn ký tự tiếng Trung không
-        if re.search(r'[\u4e00-\u9fff]', translated):
-            print("⚠️ Cảnh báo: Dịch chưa hoàn chỉnh!")
-        print(f"➡️ {translated}")
+    for i, article in enumerate(articles):
+        vi_title = vi_titles[i] if i < len(vi_titles) else article["title"]
+        if re.search(r'[\u4e00-\u9fff]', vi_title):
+            print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
+        print(f"➡️ {vi_title}")
         news_list.append({
-            "title_vi": translated,
+            "title_vi": vi_title,
             "url": article["url"],
             "cover_img": article["cover_img"],
             "date": article["date"]
         })
-        time.sleep(1)  # tránh spam API
 
-    # -- Ghi file --
+    # Ghi file
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_list, f, ensure_ascii=False, indent=2)
 
