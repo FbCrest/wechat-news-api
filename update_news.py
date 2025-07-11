@@ -18,13 +18,14 @@ def cleanup_translation(text):
     text = re.sub(r"\s{2,}", " ", text)
     return text.strip()
 
-# -- Hàm dịch nhiều câu cùng lúc --
+# -- Hàm dịch nhiều tiêu đề cùng lúc --
 def batch_translate_zh_to_vi(titles):
-    # Chuẩn bị prompt
     numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     prompt = (
-        "Dịch toàn bộ danh sách sau sang tiếng Việt tự nhiên, "
-        "mỗi câu dịch trên một dòng, không thêm bất kỳ chú thích nào:\n\n"
+        "Bạn là chuyên gia dịch thuật tiếng Trung. "
+        "Hãy dịch toàn bộ danh sách tiêu đề sau sang tiếng Việt tự nhiên, "
+        "giữ đúng nghĩa trong bối cảnh là các thông báo và tin tức trong game di động Nghịch Thủy Hàn Mobile. "
+        "Mỗi câu dịch trên một dòng, không thêm chú thích, không thêm số thứ tự:\n\n"
         + numbered_list
     )
     headers = {"Content-Type": "application/json"}
@@ -33,19 +34,15 @@ def batch_translate_zh_to_vi(titles):
             {"parts": [{"text": prompt}]}
         ]
     }
-    # Gửi request
     response = requests.post(API_URL, headers=headers, json=payload)
     if response.status_code == 200:
         result = response.json()
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        # Làm sạch
         clean_text = cleanup_translation(raw_text)
-        # Tách từng dòng
-        lines = [l.strip("0123456789. \t") for l in clean_text.split("\n") if l.strip()]
+        lines = [line.strip() for line in clean_text.split("\n") if line.strip()]
         return lines
     else:
         print("❌ Lỗi dịch:", response.status_code, response.text)
-        # Trả nguyên văn nếu lỗi
         return titles
 
 # -- Lấy dữ liệu từ JSON API --
@@ -88,6 +85,7 @@ if __name__ == "__main__":
             print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
         print(f"➡️ {vi_title}")
         news_list.append({
+            "title_zh": article["title"],
             "title_vi": vi_title,
             "url": article["url"],
             "cover_img": article["cover_img"],
