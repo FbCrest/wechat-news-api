@@ -1,11 +1,10 @@
 import requests
-from bs4 import BeautifulSoup
 import json
 import time
 import os
 
 # -- Cấu hình --
-WECHAT_URL = "https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzU5NjU1NjY1Mw==&action=getalbum&album_id=3447004682407854082"
+WECHAT_URL = "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json"
 API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
@@ -26,18 +25,20 @@ def translate_zh_to_vi(text_zh):
         print("❌ Lỗi dịch:", response.status_code, response.text)
         return text_zh
 
-# -- Lấy tiêu đề & link --
+# -- Lấy dữ liệu WeChat (JSON API) --
 def fetch_titles_links(url):
-    print("🔍 Đang lấy dữ liệu từ WeChat...")
-    resp = requests.get(url)
-    soup = BeautifulSoup(resp.text, "html.parser")
-    items = []
+    print("🔍 Đang lấy dữ liệu từ WeChat JSON API...")
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    resp = requests.get(url, headers=headers)
+    data = resp.json()
 
-    for link in soup.find_all("a", class_="album__list-item"):
-        title = link.get_text(strip=True)
-        href = link["href"]
-        if not href.startswith("http"):
-            href = "https://mp.weixin.qq.com" + href
+    items = []
+    article_list = data.get("get_album_info_resp", {}).get("article_list", [])
+    for item in article_list:
+        title = item.get("title", "").strip()
+        href = item.get("url", "").strip()
         items.append({"title": title, "url": href})
 
     print(f"✅ Đã lấy {len(items)} bài viết.")
