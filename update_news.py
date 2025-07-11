@@ -156,7 +156,8 @@ if __name__ == "__main__":
         print(f"📄 [{i+1}] {title_vi}")
 
         try:
-            resp = requests.get(art["url"], headers={"User-Agent": "Mozilla/5.0"})
+            proxied_url = f"https://wechat-image.fbcrest.workers.dev/?url={art['url']}"
+            resp = requests.get(proxied_url, headers={"User-Agent": "Mozilla/5.0"})
             html = resp.text
             match = re.search(r'<div class="rich_media_content[^>]*?">(.*?)</div>\s*<div class="rich_media_tool"', html, re.S)
             content_html = match.group(1) if match else ""
