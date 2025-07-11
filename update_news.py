@@ -10,11 +10,8 @@ MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
 ALBUMS = [
-    # Album 1
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
-    # Album 2
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzkyMjc1NzEzOA==&album_id=3646379824391471108&f=json",
-    # Album 3
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzI1MDQ1MjUxNw==&album_id=3664489989179457545&f=json"
 ]
 
@@ -47,7 +44,7 @@ def batch_translate_zh_to_vi(titles):
     numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     prompt = (
         "Bạn là chuyên gia dịch thuật tiếng Trung. "
-        "Hãy dịch toàn bộ danh sách tiêu đề và tên chủ kênh sau đây sang tiếng Việt tự nhiên, "
+        "Hãy dịch toàn bộ danh sách tiêu đề sau sang tiếng Việt tự nhiên, "
         "giữ đúng nghĩa trong bối cảnh là các thông báo và tin tức trong game di động Nghịch Thủy Hàn Mobile.\n\n"
         "Lưu ý:\n"
         "- Nếu tiêu đề chứa các từ sau thì bắt buộc dịch đúng theo bảng tra:\n"
@@ -84,19 +81,13 @@ def batch_translate_zh_to_vi(titles):
 def fetch_articles(url):
     print("🔍 Đang lấy dữ liệu từ album...")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0",
         "Accept": "application/json, text/plain, */*",
         "Referer": "https://mp.weixin.qq.com/",
         "X-Requested-With": "XMLHttpRequest"
     }
     resp = requests.get(url, headers=headers)
     data = resp.json()
-
-    account_name = (
-        data.get("getalbum_resp", {}).get("account_name")
-        or data.get("getalbum_resp", {}).get("nickname")
-        or "Không rõ kênh"
-    )
 
     articles_raw = data.get("getalbum_resp", {}).get("article_list", [])
     items = []
@@ -120,11 +111,10 @@ def fetch_articles(url):
             "url": url,
             "cover_img": cover,
             "timestamp": timestamp,
-            "date": date_str,
-            "channel": account_name  # ✅ Tên chủ kênh
+            "date": date_str
         })
 
-    print(f"✅ {len(items)} bài từ kênh: {account_name}")
+    print(f"✅ {len(items)} bài viết")
     return items
 
 def fetch_all_albums(album_urls):
@@ -156,8 +146,7 @@ if __name__ == "__main__":
             "title_vi": vi_title,
             "url": article["url"],
             "cover_img": article["cover_img"],
-            "date": article["date"],
-            "channel": article["channel"]
+            "date": article["date"]
         })
 
     with open("news.json", "w", encoding="utf-8") as f:
