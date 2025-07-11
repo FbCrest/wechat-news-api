@@ -139,6 +139,7 @@ def fetch_all_articles():
 def save_article_html(file_id, title, date, content, cover):
     os.makedirs("news_articles", exist_ok=True)
     path = f"news_articles/{file_id}.html"
+    content_html = content.replace('\n', '<br>')
     with open(path, "w", encoding="utf-8") as f:
         f.write(f"""<!DOCTYPE html>
 <html lang="vi">
@@ -157,10 +158,11 @@ def save_article_html(file_id, title, date, content, cover):
   <h1>{title}</h1>
   <div class="date">{date}</div>
   <img class="cover" src="{cover}" alt="Cover">
-  <div>{content.replace('\n', '<br>')}</div>
+  <div>{content_html}</div>
 </body>
 </html>
 """)
+
 
 if __name__ == "__main__":
     print("🔍 Đang lấy bài viết từ các album...")
