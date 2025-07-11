@@ -1,4 +1,5 @@
 import requests
+from bs4 import BeautifulSoup
 import json
 import time
 import os
@@ -10,7 +11,7 @@ MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
 HEADERS = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": "Mozilla/5.0",
 }
 
 # --- Hàm dịch tiếng Trung -> Việt ---
@@ -29,58 +30,50 @@ def translate_zh_to_vi(text_zh):
         print("❌ Lỗi dịch:", response.status_code, response.text)
         return text_zh
 
-# --- Lấy dữ liệu JSON từ HTML ---
-def fetch_album_data():
-    print("🔍 Đang tải dữ liệu album...")
+# --- Lấy danh sách bài viết ---
+def fetch_articles():
+    print("🔍 Đang tải dữ liệu album (HTML)...")
     resp = requests.get(ALBUM_URL, headers=HEADERS)
-    html = resp.text
+    soup = BeautifulSoup(resp.text, "html.parser")
 
-    start = html.find('{"getalbum_resp"')
-    if start == -1:
-        print("❌ Không tìm thấy JSON bắt đầu bằng 'getalbum_resp'")
-        return []
+    items = []
+    for idx, a in enumerate(soup.select("a.album__list-item"), 1):
+        url = a["href"]
+        if not url.startswith("http"):
+            url = "https://mp.weixin.qq.com" + url
+        title = a.get_text(strip=True)
+        img_tag = a.find("img")
+        cover_img = img_tag["data-src"] if img_tag and "data-src" in img_tag.attrs else ""
+        date_tag = a.find("p", class_="album__item-publish")
+        date_str = date_tag.get_text(strip=True) if date_tag else ""
+        items.append({
+            "title": title,
+            "url": url,
+            "cover_img": cover_img,
+            "date": date_str
+        })
 
-    end = html.find('}}', start)
-    if end == -1:
-        print("❌ Không tìm thấy phần kết thúc JSON")
-        return []
-
-    json_text = html[start:end + 2]
-
-    try:
-        data = json.loads(json_text)
-        articles = data["getalbum_resp"]["article_list"]
-        print(f"✅ Tìm thấy {len(articles)} bài viết.")
-        return articles
-    except json.JSONDecodeError as e:
-        print("❌ Lỗi JSON:", e)
-        return []
+    print(f"✅ Đã lấy {len(items)} bài viết.")
+    return items
 
 # --- Chạy chính ---
 if __name__ == "__main__":
-    articles = fetch_album_data()
+    articles = fetch_articles()
     if not articles:
         print("⚠️ Không có dữ liệu bài viết.")
         exit(0)
 
     news_list = []
     for idx, art in enumerate(articles, 1):
-        title = art["title"]
-        url = art["url"]
-        cover_img = art["cover_img_1_1"]
-        timestamp = int(art["create_time"])
-
-        print(f"\n🌐 [{idx}] Dịch tiêu đề: {title}")
-        translated = translate_zh_to_vi(title)
+        print(f"\n🌐 [{idx}] Dịch tiêu đề: {art['title']}")
+        translated = translate_zh_to_vi(art["title"])
         print(f"➡️ {translated}")
-
         news_list.append({
             "title": translated,
-            "url": url,
-            "cover_img": cover_img,
-            "date": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+            "url": art["url"],
+            "cover_img": art["cover_img"],
+            "date": art["date"]
         })
-
         time.sleep(1)
 
     # --- Xuất file JSON ---
