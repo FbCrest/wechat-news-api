@@ -11,6 +11,20 @@ API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
+# -- Bảng từ chuyên ngành --
+GLOSSARY = {
+    "沧澜": "Thương Lan",
+    "潮光": "Triều Quang",
+    "玄机": "Huyền Cơ",
+    "龙吟": "Long Ngâm",
+    "神相": "Thần Tương",
+    "血河": "Huyết Hà",
+    "碎梦": "Toái Mộng",
+    "素问": "Tố Vấn",
+    "九灵": "Cửu Linh",
+    "铁衣": "Thiết Y"
+}
+
 # -- Làm sạch text dịch --
 def cleanup_translation(text):
     text = re.sub(r"\*\*.*?\*\*", "", text)
@@ -18,13 +32,31 @@ def cleanup_translation(text):
     text = re.sub(r"\s{2,}", " ", text)
     return text.strip()
 
+# -- Thay thế tên riêng chuyên ngành còn sót --
+def fix_terms(text):
+    for zh, vi in GLOSSARY.items():
+        text = text.replace(zh, vi)
+    return text
+
 # -- Hàm dịch nhiều tiêu đề cùng lúc --
 def batch_translate_zh_to_vi(titles):
     numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     prompt = (
         "Bạn là chuyên gia dịch thuật tiếng Trung. "
         "Hãy dịch toàn bộ danh sách tiêu đề sau sang tiếng Việt tự nhiên, "
-        "giữ đúng nghĩa trong bối cảnh là các thông báo và tin tức trong game di động Nghịch Thủy Hàn Mobile. "
+        "giữ đúng nghĩa trong bối cảnh là các thông báo và tin tức trong game di động Nghịch Thủy Hàn Mobile.\n\n"
+        "Lưu ý:\n"
+        "- Nếu tiêu đề chứa các từ sau thì bắt buộc dịch đúng theo bảng tra:\n"
+        "- 沧澜 = Thương Lan\n"
+        "- 潮光 = Triều Quang\n"
+        "- 玄机 = Huyền Cơ\n"
+        "- 龙吟 = Long Ngâm\n"
+        "- 神相 = Thần Tương\n"
+        "- 血河 = Huyết Hà\n"
+        "- 碎梦 = Toái Mộng\n"
+        "- 素问 = Tố Vấn\n"
+        "- 九灵 = Cửu Linh\n"
+        "- 铁衣 = Thiết Y\n\n"
         "Mỗi câu dịch trên một dòng, không thêm chú thích, không thêm số thứ tự:\n\n"
         + numbered_list
     )
@@ -39,7 +71,7 @@ def batch_translate_zh_to_vi(titles):
         result = response.json()
         raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
         clean_text = cleanup_translation(raw_text)
-        lines = [line.strip() for line in clean_text.split("\n") if line.strip()]
+        lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
         return lines
     else:
         print("❌ Lỗi dịch:", response.status_code, response.text)
@@ -92,7 +124,6 @@ if __name__ == "__main__":
             "date": article["date"]
         })
 
-    # Ghi file
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_list, f, ensure_ascii=False, indent=2)
 
