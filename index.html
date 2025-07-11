@@ -2,28 +2,26 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <title>Bản tin Nghịch Thủy Hàn</title>
+  <title>Tin tức WeChat</title>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; }
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 1em; }
     h1 { text-align: center; }
-    ul { list-style: none; padding: 0; }
-    li { margin: 10px 0; }
-    a { text-decoration: none; color: #0077cc; }
-    a:hover { text-decoration: underline; }
+    li { margin: 0.5em 0; }
+    a { color: #3366cc; text-decoration: none; }
   </style>
 </head>
 <body>
-  <h1>Bản tin Nghịch Thủy Hàn</h1>
-  <ul id="news-list"></ul>
+  <h1>Tin tức WeChat</h1>
+  <ul id="news"></ul>
   <script>
-    fetch('./news.json')
-      .then(response => response.json())
+    fetch('news.json')
+      .then(res => res.json())
       .then(data => {
-        const list = document.getElementById('news-list');
+        const ul = document.getElementById('news');
         data.forEach(item => {
           const li = document.createElement('li');
           li.innerHTML = `<a href="${item.url}" target="_blank">${item.title_vi}</a>`;
-          list.appendChild(li);
+          ul.appendChild(li);
         });
       });
   </script>
