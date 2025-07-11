@@ -1,6 +1,5 @@
 import requests
 import json
-import time
 import os
 import re
 from datetime import datetime
@@ -19,7 +18,7 @@ ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzI1MDQ1MjUxNw==&album_id=3664489989179457545&f=json"
 ]
 
-# -- Bảng từ chuyên ngành + dịch album --
+# -- Bảng từ chuyên ngành --
 GLOSSARY = {
     "沧澜": "Thương Lan",
     "潮光": "Triều Quang",
@@ -33,25 +32,22 @@ GLOSSARY = {
     "铁衣": "Thiết Y"
 }
 
-# -- Làm sạch text dịch --
 def cleanup_translation(text):
     text = re.sub(r"\*\*.*?\*\*", "", text)
     text = re.sub(r"\n+", "\n", text)
     text = re.sub(r"\s{2,}", " ", text)
     return text.strip()
 
-# -- Thay thế tên riêng chuyên ngành --
 def fix_terms(text):
     for zh, vi in GLOSSARY.items():
         text = text.replace(zh, vi)
     return text
 
-# -- Dịch nhiều tiêu đề tiếng Trung sang tiếng Việt --
 def batch_translate_zh_to_vi(titles):
     numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     prompt = (
         "Bạn là chuyên gia dịch thuật tiếng Trung. "
-        "Hãy dịch toàn bộ danh sách tiêu đề sau sang tiếng Việt tự nhiên, "
+        "Hãy dịch toàn bộ danh sách tiêu đề và tên chủ kênh sau đây sang tiếng Việt tự nhiên, "
         "giữ đúng nghĩa trong bối cảnh là các thông báo và tin tức trong game di động Nghịch Thủy Hàn Mobile.\n\n"
         "Lưu ý:\n"
         "- Nếu tiêu đề chứa các từ sau thì bắt buộc dịch đúng theo bảng tra:\n"
@@ -85,14 +81,22 @@ def batch_translate_zh_to_vi(titles):
         print("❌ Lỗi dịch:", response.status_code, response.text)
         return titles
 
-# -- Lấy bài viết từ 1 album --
 def fetch_articles(url):
     print("🔍 Đang lấy dữ liệu từ album...")
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://mp.weixin.qq.com/",
+        "X-Requested-With": "XMLHttpRequest"
+    }
     resp = requests.get(url, headers=headers)
     data = resp.json()
 
-    album_name_zh = data.get("getalbum_resp", {}).get("album_name", "Không rõ album")
+    account_name = (
+        data.get("getalbum_resp", {}).get("account_name")
+        or data.get("getalbum_resp", {}).get("nickname")
+        or "Không rõ kênh"
+    )
 
     articles_raw = data.get("getalbum_resp", {}).get("article_list", [])
     items = []
@@ -117,13 +121,12 @@ def fetch_articles(url):
             "cover_img": cover,
             "timestamp": timestamp,
             "date": date_str,
-            "album": album_name_zh
+            "channel": account_name  # ✅ Tên chủ kênh
         })
 
-    print(f"✅ {len(items)} bài từ album: {album_name_zh}")
+    print(f"✅ {len(items)} bài từ kênh: {account_name}")
     return items
 
-# -- Lấy 4 bài mới nhất từ mỗi album, gom lại & sắp xếp --
 def fetch_all_albums(album_urls):
     all_articles = []
     for url in album_urls:
@@ -137,36 +140,27 @@ def fetch_all_albums(album_urls):
 if __name__ == "__main__":
     articles = fetch_all_albums(ALBUMS)
 
-    # Dịch tiêu đề bài viết
     zh_titles = [a["title"] for a in articles]
     print("\n🌐 Đang dịch tất cả tiêu đề...")
     vi_titles = batch_translate_zh_to_vi(zh_titles)
 
-    # Dịch tên album
-    zh_album_names = list(set([a["album"] for a in articles]))
-    print("\n📚 Đang dịch tên các album...")
-    vi_album_names = batch_translate_zh_to_vi(zh_album_names)
-    album_dict = dict(zip(zh_album_names, vi_album_names))
-
     news_list = []
     for i, article in enumerate(articles):
         vi_title = vi_titles[i] if i < len(vi_titles) else article["title"]
-        vi_album = album_dict.get(article["album"], article["album"])
-
         if re.search(r'[\u4e00-\u9fff]', vi_title):
             print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
-
         print(f"➡️ {vi_title}")
+
         news_list.append({
             "title_zh": article["title"],
             "title_vi": vi_title,
             "url": article["url"],
             "cover_img": article["cover_img"],
             "date": article["date"],
-            "album": vi_album
+            "channel": article["channel"]
         })
 
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_list, f, ensure_ascii=False, indent=2)
 
-    print("\n🎉 Hoàn tất! File news.json đã tạo.")
+    print("\n🎉 Hoàn tất! Đã tạo file news.json.")
