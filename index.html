@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Tin tức WeChat</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 1em; }
+    h1 { text-align: center; }
+    li { margin: 0.5em 0; }
+    a { color: #3366cc; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <h1>Tin tức WeChat</h1>
+  <ul id="news"></ul>
+  <script>
+    fetch('news.json')
+      .then(res => res.json())
+      .then(data => {
+        const ul = document.getElementById('news');
+        data.forEach(item => {
+          const li = document.createElement('li');
+          li.innerHTML = `<a href="${item.url}" target="_blank">${item.title_vi}</a>`;
+          ul.appendChild(li);
+        });
+      });
+  </script>
+</body>
+</html>
