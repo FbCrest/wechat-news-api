@@ -2,35 +2,36 @@ name: Update WeChat News
 
 on:
   schedule:
-    - cron: "0 1,4,7,10,13,16,19,22 * * *"   # chạy mỗi ngày lúc 0h UTC
-  workflow_dispatch:       # cho phép bấm nút chạy thủ công
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # 🚨 Thêm đoạn này ngay đây, cùng cấp với 'on'
 
 jobs:
-  build:
+  update:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.10"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    - name: Install dependencies
-      run: |
-        pip install requests beautifulsoup4
+      - name: Install dependencies
+        run: pip install requests
 
-    - name: Run fetch_translate_wechat.py
-      env:
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      run: python fetch_translate_wechat.py
+      - name: Run update script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python update_news.py
 
-    - name: Commit and push changes
-      run: |
-        git config user.name "GitHub Actions"
-        git config user.email "actions@github.com"
-        git add news.json
-        git commit -m "Update news.json" || echo "No changes"
-        git push
+      - name: Commit changes
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "github-actions@github.com"
+          git add news.json
+          git commit -m "Update news.json" || echo "No changes"
+          git push
