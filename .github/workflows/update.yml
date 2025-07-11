@@ -1,34 +1,36 @@
-name: Update news.json
+name: Update WeChat News
 
 on:
   schedule:
-    - cron: '0 2 * * *'   # Mỗi ngày lúc 2h sáng
-  workflow_dispatch:
+    - cron: "0 1,4,7,10,13,16,19,22 * * *"   # chạy mỗi ngày lúc 0h UTC
+  workflow_dispatch:       # cho phép bấm nút chạy thủ công
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+    - name: Checkout
+      uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v4
+    - name: Set up Python
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: "3.10"
 
     - name: Install dependencies
       run: |
-        pip install requests beautifulsoup4 googletrans==4.0.0-rc1
+        pip install requests beautifulsoup4
 
-    - name: Update news.json
-      run: python update_news.py
+    - name: Run fetch_translate_wechat.py
+      env:
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      run: python fetch_translate_wechat.py
 
-    - name: Commit changes
+    - name: Commit and push changes
       run: |
-        git config --global user.email "you@example.com"
-        git config --global user.name "GitHub Actions"
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
         git add news.json
         git commit -m "Update news.json" || echo "No changes"
         git push
