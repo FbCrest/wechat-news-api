@@ -8,15 +8,16 @@ from datetime import datetime
 API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
+PROXY_PREFIX = "https://wechat-image.fbcrest.workers.dev/?url="
 
-# -- Album nguồn --
+# -- Nguồn album --
 ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzkyMjc1NzEzOA==&album_id=3646379824391471108&f=json",
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzI1MDQ1MjUxNw==&album_id=3664489989179457545&f=json"
 ]
 
-# -- Bảng từ chuyên ngành cố định --
+# -- Từ khóa cố định --
 GLOSSARY = {
     "木桩": "cọc gỗ",
     "沧澜": "Thương Lan",
@@ -66,7 +67,8 @@ def batch_translate_titles(titles):
         + "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     )
     text = call_gemini(prompt)
-    if not text: return titles
+    if not text:
+        return titles
     return [fix_terms(line.strip()) for line in cleanup(text).split("\n") if line.strip()]
 
 def translate_full_article(content):
@@ -141,6 +143,7 @@ def save_article_html(file_id, title, date, content, cover):
 </body>
 </html>""")
 
+# === MAIN ===
 if __name__ == "__main__":
     print("🔍 Đang lấy bài viết từ các album...")
     articles = fetch_all_articles()
@@ -154,20 +157,22 @@ if __name__ == "__main__":
         title_vi = vi_titles[i] if i < len(vi_titles) else art["title"]
         article_id = str(art["timestamp"])
         print(f"📄 [{i+1}] {title_vi}")
-
         try:
-            proxied_url = f"https://wechat-image.fbcrest.workers.dev/?url={art['url']}"
-            resp = requests.get(proxied_url, headers={"User-Agent": "Mozilla/5.0"})
-            html = resp.text
-            match = re.search(r'<div class="rich_media_content[^>]*?">(.*?)</div>\s*<div class="rich_media_tool"', html, re.S)
-            content_html = match.group(1) if match else ""
-            content_text = re.sub("<.*?>", "", content_html)
+            proxy_url = PROXY_PREFIX + art["url"]
+            html = requests.get(proxy_url, headers={"User-Agent": "Mozilla/5.0"}).text
+
+            match = re.search(r'<div class="rich_media_content[^>]*?>(.*?)</div>', html, re.S)
+            content_raw = match.group(1) if match else ""
+            content_text = re.sub(r"<.*?>", "", content_raw)
             content_text = re.sub(r"\s{2,}", " ", content_text.strip())
+
+            if len(content_text) < 50:
+                raise ValueError("Không lấy được nội dung bài viết.")
 
             print("📝 Đang dịch bài viết...")
             translated = translate_full_article(content_text)
-            save_article_html(article_id, title_vi, art["date"], translated, art["cover_img"])
 
+            save_article_html(article_id, title_vi, art["date"], translated, art["cover_img"])
             news_json.append({
                 "title_zh": art["title"],
                 "title_vi": title_vi,
@@ -175,9 +180,9 @@ if __name__ == "__main__":
                 "cover_img": art["cover_img"],
                 "date": art["date"]
             })
-
         except Exception as e:
-            print(f"⚠️ Lỗi xử lý bài {i+1}: {e}")
+            print("⚠️ Lỗi xử lý bài viết:", e)
+            continue
 
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_json, f, ensure_ascii=False, indent=2)
