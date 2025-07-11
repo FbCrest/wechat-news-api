@@ -43,11 +43,13 @@ def fix_terms(text):
 def batch_translate_zh_to_vi(titles):
     numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     prompt = (
-        "Bạn là chuyên gia dịch thuật tiếng Trung. "
-        "Hãy dịch toàn bộ danh sách tiêu đề sau sang tiếng Việt tự nhiên, "
-        "giữ đúng nghĩa trong bối cảnh là các thông báo và tin tức trong game di động Nghịch Thủy Hàn Mobile.\n\n"
-        "Lưu ý:\n"
-        "- Nếu tiêu đề chứa các từ sau thì bắt buộc dịch đúng theo bảng tra:\n"
+        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
+        "Hãy dịch tất cả các tiêu đề sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, mang màu sắc hấp dẫn, ưu tiên giữ nguyên các thuật ngữ kỹ thuật, tên vật phẩm, và cấu trúc tiêu đề gốc.\n\n"
+        "⚠️ Quy tắc dịch:\n"
+        "- Giữ nguyên các cụm số (như 10W, 288).\n"
+        "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
+        "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
+        "- Các từ cố định phải dịch đúng theo bảng sau:\n"
         "- 沧澜 = Thương Lan\n"
         "- 潮光 = Triều Quang\n"
         "- 玄机 = Huyền Cơ\n"
@@ -58,7 +60,8 @@ def batch_translate_zh_to_vi(titles):
         "- 素问 = Tố Vấn\n"
         "- 九灵 = Cửu Linh\n"
         "- 铁衣 = Thiết Y\n\n"
-        "Mỗi câu dịch trên một dòng, không thêm chú thích, không thêm số thứ tự:\n\n"
+        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu.\n"
+        "Chỉ dịch từng dòng tương ứng với danh sách sau:\n\n"
         + numbered_list
     )
     headers = {"Content-Type": "application/json"}
