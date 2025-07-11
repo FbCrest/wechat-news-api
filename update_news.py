@@ -17,6 +17,7 @@ ALBUMS = [
 
 # -- Bảng từ chuyên ngành --
 GLOSSARY = {
+    "木桩": "cọc gỗ",
     "沧澜": "Thương Lan",
     "潮光": "Triều Quang",
     "玄机": "Huyền Cơ",
@@ -50,6 +51,7 @@ def batch_translate_zh_to_vi(titles):
         "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
         "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
         "- Các từ cố định phải dịch đúng theo bảng sau:\n"
+        "- 木桩 = cọc gỗ\n"
         "- 沧澜 = Thương Lan\n"
         "- 潮光 = Triều Quang\n"
         "- 玄机 = Huyền Cơ\n"
