@@ -42,7 +42,7 @@ def fix_terms(text):
     return text
 
 def batch_translate_zh_to_vi(titles):
-    numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
+    numbered_list = "\n".join(titles)
     prompt = (
         "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
         "Hãy dịch tất cả các tiêu đề sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, mang màu sắc hấp dẫn, ưu tiên giữ nguyên các thuật ngữ kỹ thuật, tên vật phẩm, và cấu trúc tiêu đề gốc.\n\n"
