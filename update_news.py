@@ -42,8 +42,8 @@ def fix_terms(text):
         text = text.replace(zh, vi)
     return text
 
-def batch_translate_zh_to_vi(titles):
-    numbered_list = "\n".join(titles)
+def batch_translate_zh_to_vi(titles, retries=3, delay=10):
+    joined_titles = "\n".join(titles)
     prompt = (
         "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
         "Hãy dịch tất cả các tiêu đề sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, mang màu sắc hấp dẫn, ưu tiên giữ nguyên các thuật ngữ kỹ thuật, tên vật phẩm, và cấu trúc tiêu đề gốc.\n\n"
@@ -63,26 +63,34 @@ def batch_translate_zh_to_vi(titles):
         "- 素问 = Tố Vấn\n"
         "- 九灵 = Cửu Linh\n"
         "- 铁衣 = Thiết Y\n\n"
-        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu.\n"
-        "Chỉ dịch từng dòng tương ứng với danh sách sau:\n\n"
-        + numbered_list
+        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
+        + joined_titles
     )
+
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
             {"parts": [{"text": prompt}]}
         ]
     }
-    response = requests.post(API_URL, headers=headers, json=payload)
-    if response.status_code == 200:
-        result = response.json()
-        raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        clean_text = cleanup_translation(raw_text)
-        lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
-        return lines
-    else:
-        print("❌ Lỗi dịch:", response.status_code, response.text)
-        return titles
+
+    for attempt in range(retries):
+        response = requests.post(API_URL, headers=headers, json=payload)
+        if response.status_code == 200:
+            result = response.json()
+            raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            clean_text = cleanup_translation(raw_text)
+            lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
+            return lines
+        elif response.status_code == 503:
+            print(f"⚠️ Mô hình quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
+            time.sleep(delay)
+        else:
+            print("❌ Lỗi dịch:", response.status_code, response.text)
+            return titles
+
+    print("❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
+    return titles
 
 def fetch_articles(url):
     print("🔍 Đang lấy dữ liệu từ album...")
@@ -131,22 +139,6 @@ def fetch_all_albums(album_urls):
         all_articles.extend(top_4)
     sorted_articles = sorted(all_articles, key=lambda x: x["timestamp"], reverse=True)
     return sorted_articles
-
-def batch_translate_zh_to_vi(titles, retries=3, delay=10):
-    ...
-    for attempt in range(retries):
-        response = requests.post(API_URL, headers=headers, json=payload)
-        if response.status_code == 200:
-            ...
-            return lines
-        elif response.status_code == 503:
-            print(f"⚠️ Mô hình quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
-            time.sleep(delay)
-        else:
-            print("❌ Lỗi dịch:", response.status_code, response.text)
-            return titles
-    print("❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
-    return titles
 
 # -- MAIN --
 if __name__ == "__main__":
