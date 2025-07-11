@@ -3,7 +3,6 @@ import json
 import os
 import re
 from datetime import datetime
-from urllib.parse import quote
 
 # -- Cấu hình --
 API_KEY = os.environ["GEMINI_API_KEY"]
@@ -17,6 +16,7 @@ ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzI1MDQ1MjUxNw==&album_id=3664489989179457545&f=json"
 ]
 
+# -- Bảng từ chuyên ngành cố định --
 GLOSSARY = {
     "木桩": "cọc gỗ",
     "沧澜": "Thương Lan",
@@ -60,18 +60,8 @@ def batch_translate_titles(titles):
         "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
         "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
         "- Các từ cố định phải dịch đúng theo bảng sau:\n"
-        "- 木桩 = cọc gỗ\n"
-        "- 沧澜 = Thương Lan\n"
-        "- 潮光 = Triều Quang\n"
-        "- 玄机 = Huyền Cơ\n"
-        "- 龙吟 = Long Ngâm\n"
-        "- 神相 = Thần Tương\n"
-        "- 血河 = Huyết Hà\n"
-        "- 碎梦 = Toái Mộng\n"
-        "- 素问 = Tố Vấn\n"
-        "- 九灵 = Cửu Linh\n"
-        "- 铁衣 = Thiết Y\n\n"
-        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu.\n"
+        + "\n".join([f"- {zh} = {vi}" for zh, vi in GLOSSARY.items()]) +
+        "\n\n🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu.\n"
         "Chỉ dịch từng dòng tương ứng với danh sách sau:\n\n"
         + "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     )
@@ -92,21 +82,10 @@ def translate_full_article(content):
         "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
         "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
         "- Các từ cố định phải dịch đúng theo bảng sau:\n"
-        "- 木桩 = cọc gỗ\n"
-        "- 沧澜 = Thương Lan\n"
-        "- 潮光 = Triều Quang\n"
-        "- 玄机 = Huyền Cơ\n"
-        "- 龙吟 = Long Ngâm\n"
-        "- 神相 = Thần Tương\n"
-        "- 血河 = Huyết Hà\n"
-        "- 碎梦 = Toái Mộng\n"
-        "- 素问 = Tố Vấn\n"
-        "- 九灵 = Cửu Linh\n"
-        "- 铁衣 = Thiết Y\n\n"
-        "🚫 Tuyệt đối không sử dụng từ ngữ cứng nhắc kiểu máy dịch. Không dịch thô kiểu \"người chơi có thể tiến hành nhận\", hãy viết: \"game thủ có thể nhận\", hoặc \"bạn có thể nhận\"...\n\n"
+        + "\n".join([f"- {zh} = {vi}" for zh, vi in GLOSSARY.items()]) +
+        "\n\n🚫 Tuyệt đối không sử dụng từ ngữ cứng nhắc kiểu máy dịch. Không dịch thô kiểu \"người chơi có thể tiến hành nhận\", hãy viết: \"game thủ có thể nhận\", hoặc \"bạn có thể nhận\"...\n\n"
         "Dưới đây là nội dung cần dịch:\n"
-        "---\n"
-        + content
+        "---\n" + content
     )
     result = call_gemini(prompt)
     return fix_terms(cleanup(result)) if result else ""
@@ -160,9 +139,7 @@ def save_article_html(file_id, title, date, content, cover):
   <img class="cover" src="{cover}" alt="Cover">
   <div>{content_html}</div>
 </body>
-</html>
-""")
-
+</html>""")
 
 if __name__ == "__main__":
     print("🔍 Đang lấy bài viết từ các album...")
@@ -178,7 +155,6 @@ if __name__ == "__main__":
         article_id = str(art["timestamp"])
         print(f"📄 [{i+1}] {title_vi}")
 
-        # Tải nội dung chi tiết và dịch
         try:
             resp = requests.get(art["url"], headers={"User-Agent": "Mozilla/5.0"})
             html = resp.text
