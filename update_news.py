@@ -1,15 +1,15 @@
 import requests
 import json
-import time
 import os
+import time
 
-# -- Cấu hình --
-WECHAT_JSON_URL = "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json"
+# --- Cấu hình ---
+ALBUM_URL = "https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzU5NjU1NjY1Mw==&action=getalbum&album_id=3447004682407854082"
 API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
-# -- Hàm dịch --
+# --- Hàm dịch ---
 def translate_zh_to_vi(text_zh):
     headers = {"Content-Type": "application/json"}
     payload = {
@@ -17,45 +17,53 @@ def translate_zh_to_vi(text_zh):
             {"parts": [{"text": f"Dịch sang tiếng Việt tự nhiên: {text_zh}"}]}
         ]
     }
-    response = requests.post(API_URL, headers=headers, json=payload)
-    if response.status_code == 200:
-        result = response.json()
-        return result["candidates"][0]["content"]["parts"][0]["text"].strip()
+    resp = requests.post(API_URL, headers=headers, json=payload)
+    if resp.status_code == 200:
+        data = resp.json()
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     else:
-        print("❌ Lỗi dịch:", response.status_code, response.text)
+        print("❌ Lỗi dịch:", resp.status_code, resp.text)
         return text_zh
 
-# -- Lấy tiêu đề và link từ JSON API --
-def fetch_titles_links_json(url):
-    print("🔍 Đang lấy dữ liệu JSON từ WeChat...")
-    headers = {"User-Agent": "Mozilla/5.0"}
-    resp = requests.get(url, headers=headers)
-    data = resp.json()
+# --- Lấy JSON từ WeChat ---
+def fetch_album_data():
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    resp = requests.get(ALBUM_URL, headers=headers)
+    html = resp.text
 
-    articles_raw = data.get("getalbum_resp", {}).get("article_list", [])
-    items = []
-    for art in articles_raw:
-        title = art["title"]
-        href = art["url"]
-        items.append({"title": title, "url": href})
+    start = html.find("{\"getalbum_resp\"")
+    end = html.find("}}") + 2
+    json_text = html[start:end]
 
-    print(f"✅ Đã lấy {len(items)} bài viết.")
-    return items
+    data = json.loads(json_text)
+    return data["getalbum_resp"]["article_list"]
 
-# -- Chạy --
+# --- Chạy ---
 if __name__ == "__main__":
-    articles = fetch_titles_links_json(WECHAT_JSON_URL)
+    articles = fetch_album_data()
+    print(f"✅ Lấy {len(articles)} bài viết.")
 
     news_list = []
     for idx, article in enumerate(articles, 1):
-        print(f"\n🌐 [{idx}] Dịch: {article['title']}")
-        translated = translate_zh_to_vi(article["title"])
-        print(f"➡️ {translated}")
+        title_zh = article["title"]
+        url = article["url"]
+        cover_img = article.get("cover_img_1_1")
+        timestamp = int(article["create_time"])
+        date = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+
+        print(f"\n🌐 [{idx}] Dịch: {title_zh}")
+        title_vi = translate_zh_to_vi(title_zh)
+        print(f"➡️ {title_vi}")
+
         news_list.append({
-            "title_zh": article["title"],
-            "title_vi": translated,
-            "url": article["url"]
+            "date": date,
+            "title": title_vi,
+            "url": url,
+            "cover_img": cover_img
         })
+
         time.sleep(1)
 
     with open("news.json", "w", encoding="utf-8") as f:
