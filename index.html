@@ -2,27 +2,83 @@
 <html lang="vi">
 <head>
   <meta charset="UTF-8" />
-  <title>Tin tức WeChat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tin tức Nghịch Thủy Hàn Mobile</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 1em; }
-    h1 { text-align: center; }
-    li { margin: 0.5em 0; }
-    a { color: #3366cc; text-decoration: none; }
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      margin: 0;
+      padding: 20px;
+    }
+    .news-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+    .news-item {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.2s ease;
+    }
+    .news-item:hover {
+      transform: scale(1.02);
+    }
+    .news-image {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+    }
+    .news-content {
+      padding: 15px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .news-title {
+      font-size: 16px;
+      margin: 0 0 10px;
+      color: #333;
+      text-decoration: none;
+    }
+    .news-date {
+      font-size: 13px;
+      color: #777;
+    }
   </style>
 </head>
 <body>
-  <h1>Tin tức WeChat</h1>
-  <ul id="news"></ul>
+  <h1>Tin tức Nghịch Thủy Hàn Mobile</h1>
+  <div class="news-container" id="news"></div>
+
   <script>
     fetch('news.json')
-      .then(res => res.json())
+      .then(response => response.json())
       .then(data => {
-        const ul = document.getElementById('news');
+        const container = document.getElementById('news');
         data.forEach(item => {
-          const li = document.createElement('li');
-          li.innerHTML = `<a href="${item.url}" target="_blank">${item.title_vi}</a>`;
-          ul.appendChild(li);
+          const div = document.createElement('div');
+          div.className = 'news-item';
+          div.innerHTML = `
+            <a href="${item.url}" target="_blank">
+              <img src="${item.cover_img}" alt="Cover" class="news-image"/>
+            </a>
+            <div class="news-content">
+              <a href="${item.url}" target="_blank" class="news-title">${item.title_vi}</a>
+              <div class="news-date">Ngày đăng: ${item.date}</div>
+            </div>
+          `;
+          container.appendChild(div);
         });
+      })
+      .catch(err => {
+        console.error('Lỗi tải news.json:', err);
+        document.getElementById('news').innerHTML = '<p>Không thể tải dữ liệu.</p>';
       });
   </script>
 </body>
