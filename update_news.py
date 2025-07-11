@@ -155,26 +155,32 @@ if __name__ == "__main__":
         article_id = str(art["timestamp"])
         print(f"📄 [{i+1}] {title_vi}")
 
-try:
-    resp = requests.get(art["url"], headers={"User-Agent": "Mozilla/5.0"})
-    html = resp.text
+    try:
+        resp = requests.get(art["url"], headers={"User-Agent": "Mozilla/5.0"})
+        html = resp.text
 
-    # Trích phần nội dung chính ra khỏi HTML gốc
-    content_match = re.search(r'<div class="rich_media_content[^>]*?>(.*?)</div>', html, re.S)
-    content_html = content_match.group(1) if content_match else ""
+        content_match = re.search(r'<div class="rich_media_content[^>]*?>(.*?)</div>', html, re.S)
+        content_html = content_match.group(1) if content_match else ""
 
-    # Dọn sạch về dạng text để Gemini dễ dịch
-    content_text = re.sub(r"<.*?>", "", content_html)
-    content_text = re.sub(r"\s{2,}", " ", content_text.strip())
+        content_text = re.sub(r"<.*?>", "", content_html)
+        content_text = re.sub(r"\s{2,}", " ", content_text.strip())
 
-    print("📝 Đang dịch bài viết...")
-    translated = translate_full_article(content_text)
+        print("📝 Đang dịch bài viết...")
+        translated = translate_full_article(content_text)
 
-    # Lưu HTML dịch ra thư mục
-    save_article_html(article_id, title_vi, art["date"], translated, art["cover_img"])
-except Exception as e:
-    print("⚠️ Lỗi xử lý nội dung:", e)
-    continue
+        save_article_html(article_id, title_vi, art["date"], translated, art["cover_img"])
+
+        news_json.append({
+            "title_zh": art["title"],
+            "title_vi": title_vi,
+            "url": f"news_articles/{article_id}.html",
+            "cover_img": art["cover_img"],
+            "date": art["date"]
+        })
+    except Exception as e:
+        print("⚠️ Lỗi xử lý nội dung:", e)
+        continue
+
 
 
         news_json.append({
