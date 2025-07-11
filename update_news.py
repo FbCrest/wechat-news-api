@@ -2,6 +2,7 @@ import requests
 import json
 import os
 import re
+import time
 from datetime import datetime
 
 # -- Cấu hình --
@@ -130,6 +131,22 @@ def fetch_all_albums(album_urls):
         all_articles.extend(top_4)
     sorted_articles = sorted(all_articles, key=lambda x: x["timestamp"], reverse=True)
     return sorted_articles
+
+def batch_translate_zh_to_vi(titles, retries=3, delay=10):
+    ...
+    for attempt in range(retries):
+        response = requests.post(API_URL, headers=headers, json=payload)
+        if response.status_code == 200:
+            ...
+            return lines
+        elif response.status_code == 503:
+            print(f"⚠️ Mô hình quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
+            time.sleep(delay)
+        else:
+            print("❌ Lỗi dịch:", response.status_code, response.text)
+            return titles
+    print("❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
+    return titles
 
 # -- MAIN --
 if __name__ == "__main__":
