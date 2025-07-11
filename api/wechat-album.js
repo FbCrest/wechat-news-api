@@ -28,10 +28,11 @@ export default async function handler(req, res) {
       }
     });
 
-    res.setHeader('Cache-Control', 's-maxage=600');
+    res.setHeader("Access-Control-Allow-Origin", "*"); // Cho phép gọi từ frontend
+    res.setHeader("Content-Type", "application/json");
     res.status(200).json(items);
   } catch (err) {
-    console.error(err);
+    console.error('Lỗi khi lấy dữ liệu:', err);
     res.status(500).json({ error: 'Không thể lấy dữ liệu album WeChat.' });
   }
 }
