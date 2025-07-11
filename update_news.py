@@ -6,12 +6,20 @@ import re
 from datetime import datetime
 
 # -- Cấu hình --
-WECHAT_JSON_URL = "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json"
 API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
-# -- Bảng từ chuyên ngành --
+ALBUMS = [
+    # Album 1
+    "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
+    # Album 2
+    "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzkyMjc1NzEzOA==&album_id=3646379824391471108&f=json",
+    # Album 3
+    "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzI1MDQ1MjUxNw==&album_id=3664489989179457545&f=json"
+]
+
+# -- Bảng từ chuyên ngành + dịch album --
 GLOSSARY = {
     "沧澜": "Thương Lan",
     "潮光": "Triều Quang",
@@ -32,13 +40,13 @@ def cleanup_translation(text):
     text = re.sub(r"\s{2,}", " ", text)
     return text.strip()
 
-# -- Thay thế tên riêng chuyên ngành còn sót --
+# -- Thay thế tên riêng chuyên ngành --
 def fix_terms(text):
     for zh, vi in GLOSSARY.items():
         text = text.replace(zh, vi)
     return text
 
-# -- Hàm dịch nhiều tiêu đề cùng lúc --
+# -- Dịch nhiều tiêu đề tiếng Trung sang tiếng Việt --
 def batch_translate_zh_to_vi(titles):
     numbered_list = "\n".join([f"{i+1}. {t}" for i, t in enumerate(titles)])
     prompt = (
@@ -77,51 +85,85 @@ def batch_translate_zh_to_vi(titles):
         print("❌ Lỗi dịch:", response.status_code, response.text)
         return titles
 
-# -- Lấy dữ liệu từ JSON API --
+# -- Lấy bài viết từ 1 album --
 def fetch_articles(url):
-    print("🔍 Đang lấy dữ liệu JSON từ WeChat...")
+    print("🔍 Đang lấy dữ liệu từ album...")
     headers = {"User-Agent": "Mozilla/5.0"}
     resp = requests.get(url, headers=headers)
     data = resp.json()
 
+    album_name_zh = data.get("getalbum_resp", {}).get("album_name", "Không rõ album")
+
     articles_raw = data.get("getalbum_resp", {}).get("article_list", [])
     items = []
+
+    weekdays_vi = [
+        "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm",
+        "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"
+    ]
+
     for art in articles_raw:
         title = art["title"]
         url = art["url"]
         cover = art.get("cover_img_1_1") or art.get("cover") or ""
         timestamp = int(art.get("create_time", 0))
-        date_str = datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
+        dt = datetime.utcfromtimestamp(timestamp)
+        weekday = weekdays_vi[dt.weekday()]
+        date_str = f"{dt.strftime('%H:%M')} - {weekday}, {dt.strftime('%d/%m')}"
+
         items.append({
             "title": title,
             "url": url,
             "cover_img": cover,
-            "date": date_str
+            "timestamp": timestamp,
+            "date": date_str,
+            "album": album_name_zh
         })
 
-    print(f"✅ Đã lấy {len(items)} bài viết.")
+    print(f"✅ {len(items)} bài từ album: {album_name_zh}")
     return items
 
-# -- Chạy chính --
-if __name__ == "__main__":
-    articles = fetch_articles(WECHAT_JSON_URL)
+# -- Lấy 4 bài mới nhất từ mỗi album, gom lại & sắp xếp --
+def fetch_all_albums(album_urls):
+    all_articles = []
+    for url in album_urls:
+        articles = fetch_articles(url)
+        top_4 = sorted(articles, key=lambda x: x["timestamp"], reverse=True)[:4]
+        all_articles.extend(top_4)
+    sorted_articles = sorted(all_articles, key=lambda x: x["timestamp"], reverse=True)
+    return sorted_articles
 
+# -- MAIN --
+if __name__ == "__main__":
+    articles = fetch_all_albums(ALBUMS)
+
+    # Dịch tiêu đề bài viết
     zh_titles = [a["title"] for a in articles]
     print("\n🌐 Đang dịch tất cả tiêu đề...")
     vi_titles = batch_translate_zh_to_vi(zh_titles)
 
+    # Dịch tên album
+    zh_album_names = list(set([a["album"] for a in articles]))
+    print("\n📚 Đang dịch tên các album...")
+    vi_album_names = batch_translate_zh_to_vi(zh_album_names)
+    album_dict = dict(zip(zh_album_names, vi_album_names))
+
     news_list = []
     for i, article in enumerate(articles):
         vi_title = vi_titles[i] if i < len(vi_titles) else article["title"]
+        vi_album = album_dict.get(article["album"], article["album"])
+
         if re.search(r'[\u4e00-\u9fff]', vi_title):
             print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
+
         print(f"➡️ {vi_title}")
         news_list.append({
             "title_zh": article["title"],
             "title_vi": vi_title,
             "url": article["url"],
             "cover_img": article["cover_img"],
-            "date": article["date"]
+            "date": article["date"],
+            "album": vi_album
         })
 
     with open("news.json", "w", encoding="utf-8") as f:
