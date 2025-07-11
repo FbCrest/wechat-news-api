@@ -158,7 +158,11 @@ if __name__ == "__main__":
         try:
             resp = requests.get(art["url"], headers={"User-Agent": "Mozilla/5.0"})
             html = resp.text
-            content_match = re.search(r'<div class="rich_media_content[^>]*?>(.*?)<div class="rich_media_tool"', html, re.S)
+            content_match = re.search(
+    r'<div class="rich_media_content[^>]*?>(.*?)</div>\s*<div class="rich_media_area_extra"',
+    html,
+    re.S
+)
             content_html = content_match.group(1) if content_match else ""
             content_text = re.sub("<.*?>", "", content_html)
             content_text = re.sub(r"\s{2,}", " ", content_text.strip())
