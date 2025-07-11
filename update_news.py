@@ -2,6 +2,7 @@ import requests
 import json
 import time
 import os
+import re
 from datetime import datetime
 
 # -- Cấu hình --
@@ -10,12 +11,20 @@ API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
 API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
+# -- Hàm làm sạch text dịch --
+def cleanup_translation(text):
+    # Xóa phần giải thích hoặc markdown
+    text = re.sub(r"\*\*.*?\*\*", "", text)
+    text = re.sub(r"\n+", " ", text)
+    text = re.sub(r"\s{2,}", " ", text)
+    return text.strip()
+
 # -- Hàm dịch --
 def translate_zh_to_vi(text_zh):
     headers = {"Content-Type": "application/json"}
     payload = {
         "contents": [
-            {"parts": [{"text": f"Dịch sang tiếng Việt tự nhiên: {text_zh}"}]}
+            {"parts": [{"text": f"Hãy dịch câu sau sang tiếng Việt tự nhiên, chỉ trả về đúng câu đã dịch, không thêm bất cứ chú thích nào: {text_zh}"}]}
         ]
     }
     response = requests.post(API_URL, headers=headers, json=payload)
@@ -58,7 +67,11 @@ if __name__ == "__main__":
     news_list = []
     for idx, article in enumerate(articles, 1):
         print(f"\n🌐 [{idx}] Dịch: {article['title']}")
-        translated = translate_zh_to_vi(article["title"])
+        translated_raw = translate_zh_to_vi(article["title"])
+        translated = cleanup_translation(translated_raw)
+        # Kiểm tra còn ký tự tiếng Trung không
+        if re.search(r'[\u4e00-\u9fff]', translated):
+            print("⚠️ Cảnh báo: Dịch chưa hoàn chỉnh!")
         print(f"➡️ {translated}")
         news_list.append({
             "title_vi": translated,
