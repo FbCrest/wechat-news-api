@@ -137,13 +137,25 @@
                     authorEl.textContent = article.author;
                     dateEl.textContent = article.date;
                     
-                    // Sử dụng proxy cho ảnh để tránh bị chặn
-                    let processedHtml = article.html_content_vi;
+                    contentEl.innerHTML = ''; // Xóa nội dung cũ
                     const imageProxy = 'https://wechat-image.fbcrest.workers.dev/?url=';
-                    processedHtml = processedHtml.replace(/data-src="(.*?)"/g, (match, url) => `src="${imageProxy}${encodeURIComponent(url)}"`);
-                    processedHtml = processedHtml.replace(/src="(http[s]?:\/\/mmbiz.qpic.cn\/.*?)"/g, (match, url) => `src="${imageProxy}${encodeURIComponent(url)}"`);
 
-                    contentEl.innerHTML = processedHtml;
+                    if (article.structured_content_vi && Array.isArray(article.structured_content_vi)) {
+                        article.structured_content_vi.forEach(block => {
+                            if (block.type === 'text' && block.content) {
+                                const p = document.createElement('p');
+                                p.textContent = block.content;
+                                contentEl.appendChild(p);
+                            } else if (block.type === 'image' && block.url) {
+                                const img = document.createElement('img');
+                                img.src = `${imageProxy}${encodeURIComponent(block.url)}`;
+                                contentEl.appendChild(img);
+                            }
+                        });
+                    } else {
+                        // Fallback cho cấu trúc cũ nếu cần
+                        contentEl.textContent = 'Không thể hiển thị nội dung bài viết do định dạng không đúng.';
+                    }
 
                 } else {
                     document.title = 'Không tìm thấy bài viết';
