@@ -4,66 +4,380 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Tin tức Nghịch Thủy Hàn Mobile</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
+    /* Ẩn nội dung cho đến khi JS tải xong */
     body {
-      font-family: Arial, sans-serif;
-      background: #f7f7f7;
-      margin: 0;
-      padding: 20px;
+      opacity: 0;
+      transition: opacity 0.5s ease-in-out;
     }
+    body.loaded {
+      opacity: 1;
+    }
+
+    /* CSS reset và biến cho Dark/Light mode */
+    :root {
+      /* Light mode colors */
+      --bg-color: #f0f2f5;
+      --card-bg: #ffffff;
+      --text-color-primary: #333;
+      --text-color-secondary: #666;
+      --heading-color: #2c3e50;
+      --accent-color: #3498db;
+      --shadow-color: rgba(0,0,0,0.1);
+      --border-color: #e0e0e0;
+    }
+
+    [data-theme="dark"] {
+      /* Dark mode colors */
+      --bg-color: #282c34;
+      --card-bg: #3c4048;
+      --text-color-primary: #f0f0f0;
+      --text-color-secondary: #cccccc;
+      --heading-color: #61dafb;
+      --accent-color: #61dafb;
+      --shadow-color: rgba(0,0,0,0.3);
+      --border-color: #4a4f57;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Poppins', 'Noto Sans JP', sans-serif;
+      background: var(--bg-color);
+      color: var(--text-color-primary);
+      line-height: 1.6;
+      padding: 20px;
+      transition: background 0.5s ease, color 0.5s ease;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* Loading animation */
+    .loader-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-color);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+      transition: opacity 0.5s ease;
+    }
+
+    .loader {
+      border: 6px solid var(--border-color);
+      border-top: 6px solid var(--accent-color);
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Header và nút chuyển đổi theme */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 40px;
+      padding: 0 20px;
+      max-width: 1200px;
+      margin-left: auto;
+      margin-right: auto;
+      flex-wrap: wrap; /* Cho phép wrap trên màn hình nhỏ */
+    }
+
+    h1 {
+      color: var(--heading-color);
+      font-size: 2.8em;
+      font-weight: 700;
+      text-align: center; /* Căn giữa tiêu đề */
+      flex-grow: 1; /* Cho phép tiêu đề chiếm không gian còn lại */
+    }
+
+    .theme-switch-wrapper {
+      display: flex;
+      align-items: center;
+      margin-top: 10px; /* Thêm khoảng cách trên di động */
+      margin-left: 20px; /* Đẩy nút sang phải */
+    }
+
+    .theme-switch {
+      display: inline-block;
+      height: 34px;
+      position: relative;
+      width: 60px;
+    }
+
+    .theme-switch input {
+      display: none;
+    }
+
+    .slider {
+      background-color: var(--text-color-secondary);
+      bottom: 0;
+      cursor: pointer;
+      left: 0;
+      position: absolute;
+      right: 0;
+      top: 0;
+      transition: .4s;
+      border-radius: 34px;
+    }
+
+    .slider:before {
+      background-color: var(--card-bg);
+      bottom: 4px;
+      content: "";
+      height: 26px;
+      left: 4px;
+      position: absolute;
+      width: 26px;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: var(--accent-color);
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+
+    /* Main Grid */
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 16px;
+      gap: 25px;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding-bottom: 40px; /* Thêm khoảng đệm cuối trang */
     }
+
+    /* Card tin tức */
     .card {
-      background: #fff;
-      border-radius: 8px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-      padding: 0;
+      background: var(--card-bg);
+      border-radius: 12px;
+      box-shadow: 0 4px 15px var(--shadow-color);
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.5s ease;
     }
+
+    .card:hover {
+      transform: translateY(-10px); /* Nâng card lên nhiều hơn */
+      box-shadow: 0 10px 30px var(--shadow-color); /* Bóng đổ rõ hơn */
+    }
+
+    .card a {
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
     .card img {
       width: 100%;
+      height: 200px;
+      object-fit: cover;
       display: block;
+      border-top-left-radius: 12px;
+      border-top-right-radius: 12px;
+      transition: transform 0.3s ease; /* Animation cho ảnh khi hover */
     }
+
+    .card:hover img {
+      transform: scale(1.05); /* Phóng to ảnh nhẹ khi hover */
+    }
+
     .card-content {
-      padding: 12px;
+      padding: 15px 20px;
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
     }
-    .card-content p {
-      margin: 0;
-      font-size: 14px;
+
+    .card-content p.title {
+      font-size: 1.15em;
+      font-weight: 600;
+      color: var(--text-color-primary);
+      margin-bottom: 10px;
+      display: -webkit-box; /* Cắt bớt văn bản nếu quá dài */
+      -webkit-line-clamp: 3; /* Giới hạn 3 dòng */
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
-    .date {
-      font-size: 12px;
-      color: #555;
-      margin-top: 4px;
+
+    .card-content p.date {
+      font-size: 0.9em;
+      color: var(--text-color-secondary);
+      text-align: right;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-color-secondary);
+      margin-top: auto; /* Đẩy footer xuống cuối trang */
+      font-size: 0.9em;
+      border-top: 1px solid var(--border-color);
+      transition: border-top 0.5s ease, color 0.5s ease;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+      h1 {
+        font-size: 2em;
+        margin-bottom: 20px;
+        text-align: left; /* Căn trái tiêu đề trên di động */
+      }
+      .header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .theme-switch-wrapper {
+        margin-top: 15px;
+        margin-left: 0;
+      }
+      .grid {
+        grid-template-columns: 1fr; /* Một cột trên màn hình nhỏ */
+        padding: 0 10px;
+      }
+      body {
+        padding: 10px;
+      }
+    }
+
+    /* Custom Scrollbar (WebKit based - Chrome, Safari) */
+    ::-webkit-scrollbar {
+      width: 12px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-color);
+      border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--text-color-secondary);
+      border-radius: 10px;
+      border: 3px solid var(--bg-color);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--accent-color);
     }
   </style>
 </head>
 <body>
-  <h1>Tin tức Nghịch Thủy Hàn Mobile</h1>
+  <div class="loader-container" id="loader">
+    <div class="loader"></div>
+  </div>
+
+  <div class="header">
+    <h1>Tin tức Nghịch Thủy Hàn Mobile</h1>
+    <div class="theme-switch-wrapper">
+      <label class="theme-switch" for="checkbox">
+        <input type="checkbox" id="checkbox" />
+        <div class="slider"></div>
+      </label>
+      <span style="margin-left: 10px; color: var(--text-color-primary); font-weight: 600;">Chế độ tối</span>
+    </div>
+  </div>
+
   <div class="grid" id="news"></div>
 
+  <footer class="footer">
+    &copy; 2025 Tin tức Nghịch Thủy Hàn Mobile. All rights reserved.
+  </footer>
+
   <script>
-    fetch('news.json')
-      .then(response => response.json())
-      .then(data => {
-        const container = document.getElementById('news');
-        container.innerHTML = data.map(item => `
-          <div class="card">
-            <a href="${item.url}" target="_blank">
-              <img src="https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}" alt="">
-            </a>
-            <div class="card-content">
-              <p>${item.title_vi}</p>
-              <p class="date">Ngày đăng: ${item.date}</p>
-            </div>
-          </div>
-        `).join('');
+    document.addEventListener('DOMContentLoaded', () => {
+      const loader = document.getElementById('loader');
+      const body = document.body;
+      const themeToggle = document.getElementById('checkbox');
+
+      // Ẩn loader và hiển thị nội dung khi trang tải xong
+      const hideLoader = () => {
+        loader.style.opacity = '0';
+        setTimeout(() => {
+          loader.style.display = 'none';
+          body.classList.add('loaded'); // Hiển thị nội dung
+        }, 500); // Đợi transition kết thúc
+      };
+
+      // Tải và hiển thị tin tức
+      fetch('news.json')
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok ' + response.statusText);
+          }
+          return response.json();
+        })
+        .then(data => {
+          const container = document.getElementById('news');
+          if (data && data.length > 0) {
+            container.innerHTML = data.map(item => `
+              <div class="card">
+                <a href="${item.url}" target="_blank" rel="noopener noreferrer">
+                  <img src="https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}" alt="${item.title_vi}">
+                  <div class="card-content">
+                    <p class="title">${item.title_vi}</p>
+                    <p class="date">Ngày đăng: ${item.date}</p>
+                  </div>
+                </a>
+              </div>
+            `).join('');
+          } else {
+            container.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không có tin tức nào để hiển thị.</p>';
+          }
+          hideLoader(); // Ẩn loader sau khi tin tức được tải
+        })
+        .catch(error => {
+          console.error('Error fetching news:', error);
+          const container = document.getElementById('news');
+          container.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không thể tải tin tức. Vui lòng thử lại sau.</p>';
+          hideLoader(); // Ẩn loader ngay cả khi có lỗi
+        });
+
+      // Xử lý chuyển đổi theme
+      const currentTheme = localStorage.getItem('theme') ? localStorage.getItem('theme') : null;
+      if (currentTheme) {
+        document.documentElement.setAttribute('data-theme', currentTheme);
+        if (currentTheme === 'dark') {
+          themeToggle.checked = true;
+        }
+      }
+
+      themeToggle.addEventListener('change', function() {
+        if (this.checked) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+          localStorage.setItem('theme', 'dark');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'light');
+          localStorage.setItem('theme', 'light');
+        }
       });
+    });
   </script>
 </body>
 </html>
