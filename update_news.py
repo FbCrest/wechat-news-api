@@ -44,27 +44,23 @@ def fix_terms(text):
         text = text.replace(zh, vi)
     return text
 
-def translate_content_zh_to_vi(content, retries=3, delay=15):
-    if not content:
+def translate_html_content_zh_to_vi(html_content, retries=3, delay=20):
+    """Dịch nội dung HTML, giữ nguyên thẻ, với cơ chế thử lại và xử lý lỗi rate limit."""
+    if not html_content or not html_content.strip():
         return ""
 
-    print("    ↪ Đang dịch nội dung...")
-    prompt = (
-        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, chuyên về game 'Nghịch Thủy Hàn Mobile'.\n"
-        "Hãy dịch nội dung bài viết sau đây sang tiếng Việt một cách tự nhiên, chính xác, giữ nguyên văn phong của một bài hướng dẫn/tin tức game.\n\n"
-        "**Quy tắc dịch:**\n"
-        "- **Giữ nguyên định dạng:** Giữ lại các dấu xuống dòng, khoảng trắng để duy trì cấu trúc của bài viết.\n"
-        "- **Thuật ngữ:** Áp dụng bảng thuật ngữ được cung cấp một cách nhất quán.\n"
-        "- **Không thêm thắt:** Chỉ dịch nội dung được cung cấp, không thêm bất kỳ bình luận, ghi chú hay lời chào nào.\n\n"
-        "**Nội dung cần dịch:**\n\n"
-        + content
-    )
-
     headers = {"Content-Type": "application/json"}
+    prompt = (
+        "You are an expert translator. Your task is to translate the text content within the following HTML snippet from Chinese to Vietnamese.\n"
+        "**Crucially, you must preserve all HTML tags and their structure exactly as they are.**\n"
+        "Only translate the user-visible text. Do not translate attribute values like src, href, class, id, etc.\n"
+        "The content is from a gaming news article. Keep game-related terms in English or use common Vietnamese equivalents.\n\n"
+        f"Original HTML:\n{html_content}"
+    )
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
-            "temperature": 0.4,
+            "temperature": 0.3,
             "topP": 0.95,
             "topK": 40
         }
@@ -72,24 +68,26 @@ def translate_content_zh_to_vi(content, retries=3, delay=15):
 
     for attempt in range(retries):
         try:
-            response = requests.post(API_URL, headers=headers, json=payload, timeout=120) # Timeout dài hơn cho nội dung
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=180)
             if response.status_code == 200:
                 result = response.json()
                 raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                print("    ✅ Dịch nội dung thành công.")
-                return fix_terms(raw_text)
-            elif response.status_code == 503:
-                print(f"    ⚠️ Mô hình quá tải khi dịch nội dung. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
-                time.sleep(delay)
+                cleaned_html = raw_text.strip().removeprefix('```html').removesuffix('```').strip()
+                print("    ✅ Dịch HTML thành công.")
+                return cleaned_html
+            elif response.status_code in [429, 503]:
+                wait_time = delay * (attempt + 1)
+                print(f"    ⚠️ Lỗi {response.status_code} (Quá tải/Giới hạn). Thử lại lần {attempt + 1}/{retries} sau {wait_time}s...")
+                time.sleep(wait_time)
             else:
-                print(f"    ❌ Lỗi dịch nội dung: {response.status_code}")
-                return content # Trả về nội dung gốc nếu lỗi
+                print(f"    ❌ Lỗi không mong muốn khi dịch HTML: {response.status_code} - {response.text}")
+                return ""  # Trả về chuỗi rỗng khi có lỗi nghiêm trọng
         except requests.exceptions.RequestException as e:
-            print(f"    ❌ Lỗi mạng khi dịch nội dung: {e}")
+            print(f"    ❌ Lỗi mạng khi dịch HTML: {e}. Thử lại sau {delay}s...")
             time.sleep(delay)
 
-    print("    ❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch nội dung.")
-    return content
+    print("    ❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch HTML.")
+    return ""
 
 def batch_translate_zh_to_vi(titles, retries=3, delay=10):
     joined_titles = "\n".join(titles)
@@ -182,44 +180,33 @@ def fetch_articles(url):
     return items
 
 def fetch_article_details(url):
-    print(f"    ↪ Đang lấy chi tiết từ: {url[:40]}...")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Lấy tên tác giả/kênh
-        author_element = soup.find('strong', class_='profile_nickname')
-        author = author_element.get_text(strip=True) if author_element else "Không rõ"
+        author_element = soup.select_one('#js_name')
+        author = author_element.text.strip() if author_element else 'N/A'
 
-        # Lấy nội dung chính
-        content_element = soup.find('div', class_='rich_media_content')
-        if not content_element:
-            return {"error": "Không tìm thấy nội dung chính"}
+        content_div = soup.select_one('#js_content')
+        if not content_div:
+            return None
 
-        # Trích xuất HTML và text
-        html_content = str(content_element)
-        text_content = content_element.get_text('\n', strip=True)
+        # Remove script tags
+        for script in content_div.find_all('script'):
+            script.decompose()
 
-        # Lấy tất cả hình ảnh, ưu tiên data-src cho ảnh lazy-load
-        images = []
-        for img in content_element.find_all('img'):
-            src = img.get('data-src') or img.get('src')
-            if src and src.startswith('http'):
-                images.append(src)
+        html_content = str(content_div)
+        images = [img.get('data-src', img.get('src')) for img in content_div.find_all('img') if img.get('data-src') or img.get('src')]
 
         return {
-            "author": author,
-            "html_content": html_content,
-            "text_content": text_content,
-            "images": images
+            'author': author,
+            'html_content': html_content,
+            'images': images
         }
-    except requests.RequestException as e:
-        print(f"    ❌ Lỗi khi lấy chi tiết bài viết: {e}")
-        return {"error": str(e)}
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching article details from {url}: {e}")
+        return None
     except Exception as e:
         print(f"    ❌ Lỗi không xác định: {e}")
         return {"error": str(e)}
@@ -235,48 +222,86 @@ def fetch_all_albums(album_urls):
 
 # -- MAIN --
 if __name__ == "__main__":
+    # B1: Tải cache từ news.json nếu có
+    existing_news = {}
+    if os.path.exists("news.json"):
+        try:
+            with open("news.json", "r", encoding="utf-8") as f:
+                old_news_list = json.load(f)
+                for item in old_news_list:
+                    if item.get("url"):
+                        existing_news[item["url"]] = item
+            print(f"✅ Đã tải {len(existing_news)} bài viết từ cache.")
+        except (json.JSONDecodeError, FileNotFoundError):
+            print("⚠️ Không thể đọc file cache news.json, sẽ tạo mới từ đầu.")
+            existing_news = {}
+
+    # B2: Lấy danh sách bài viết mới nhất từ các album
     articles = fetch_all_albums(ALBUMS)
 
+    # B3: Dịch tiêu đề hàng loạt (vẫn hiệu quả)
     zh_titles = [a["title"] for a in articles]
     print("\n🌐 Đang dịch tất cả tiêu đề...")
     vi_titles = batch_translate_zh_to_vi(zh_titles)
 
-    news_list = []
-    for i, article in enumerate(articles):
-        print(f"\n[{i+1}/{len(articles)}] Đang xử lý: {article['title']}")
-        
-        # Dịch tiêu đề
-        vi_title = vi_titles[i] if i < len(vi_titles) else article["title"]
-        if re.search(r'[\u4e00-\u9fff]', vi_title):
-            print(f"    ⚠️ Dịch tiêu đề chưa hoàn chỉnh!")
-        print(f"    ➡️ Tiêu đề VI: {vi_title}")
+    # B4: Xử lý từng bài viết
+    final_news_list = []
+    for i, article_summary in enumerate(articles):
+        print(f"\n[{i+1}/{len(articles)}] Đang xử lý: {article_summary['title']}")
+        article_url = article_summary['url']
 
-        # Lấy chi tiết bài viết
-        details = fetch_article_details(article['url'])
-        if 'error' in details:
-            print(f"    ❌ Bỏ qua bài viết do lỗi: {details['error']}")
+        # Kiểm tra cache: Nếu bài viết đã có và đã được dịch thì dùng lại
+        cached_article = existing_news.get(article_url)
+        if cached_article and cached_article.get("html_content_vi"):
+            print("    ➡️  Đã có bản dịch trong cache, bỏ qua.")
+            # Cập nhật thông tin mới nhất như tiêu đề, ngày đăng
+            cached_article['title_vi'] = vi_titles[i] if i < len(vi_titles) else cached_article.get('title_vi', '')
+            cached_article['date'] = article_summary['date']
+            final_news_list.append(cached_article)
             continue
 
-        # Dịch nội dung
-        text_content_zh = details.get("text_content", "")
-        text_content_vi = translate_content_zh_to_vi(text_content_zh)
+        # Dịch tiêu đề
+        vi_title = vi_titles[i] if i < len(vi_titles) else article_summary["title"]
+        print(f"    ➡️  Tiêu đề VI: {vi_title}")
 
-        # Kết hợp thông tin
+        # Lấy chi tiết bài viết
+        print("    ↪️  Đang tải chi tiết bài viết...")
+        details = fetch_article_details(article_url)
+        if not details:
+            print(f"    ❌ Không thể tải chi tiết cho: {article_summary['title']}")
+            continue
+
+        # Dịch nội dung HTML
+        print("    ↪️  Đang dịch nội dung HTML...")
+        translated_html = translate_html_content_zh_to_vi(details['html_content'])
+
+        # Nếu dịch thất bại, không thêm vào danh sách cuối cùng
+        if not translated_html:
+            print(f"    ❌ Dịch nội dung thất bại, bỏ qua bài viết này.")
+            continue
+
+        # Tạo đối tượng bài viết hoàn chỉnh
         full_article_data = {
-            "title_zh": article["title"],
+            "title_zh": article_summary["title"],
             "title_vi": vi_title,
-            "url": article["url"],
-            "cover_img": article["cover_img"],
-            "date": article["date"],
+            "url": article_url,
+            "cover_img": article_summary["cover_img"],
+            "date": article_summary["date"],
             "author": details.get("author", "Không rõ"),
-            "html_content": details.get("html_content", ""),
-            "text_content_zh": text_content_zh,
-            "text_content_vi": text_content_vi,
+            "html_content_vi": translated_html,
             "images": details.get("images", [])
         }
-        news_list.append(full_article_data)
+        final_news_list.append(full_article_data)
 
+        # Thêm độ trễ 5 giây để tránh rate limit
+        print("    ⏳ Tạm nghỉ 5 giây để tránh quá tải API...")
+        time.sleep(5)
+
+    # B5: Sắp xếp lại danh sách cuối cùng theo timestamp để đảm bảo thứ tự
+    final_news_list.sort(key=lambda x: existing_news.get(x['url'], {}).get('timestamp', 0) if 'timestamp' in existing_news.get(x['url'], {}) else [a for a in articles if a['url'] == x['url']][0]['timestamp'], reverse=True)
+
+    # B6: Lưu kết quả
     with open("news.json", "w", encoding="utf-8") as f:
-        json.dump(news_list, f, ensure_ascii=False, indent=2)
+        json.dump(final_news_list, f, ensure_ascii=False, indent=2)
 
-    print("\n🎉 Hoàn tất! Đã tạo file news.json.")
+    print("\n🎉 Hoàn tất! Đã tạo file news.json với cơ chế cache và chống quá tải.")
