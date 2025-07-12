@@ -180,24 +180,42 @@ def fetch_articles(url):
     return items
 
 def fetch_article_details(url):
+    """Lấy nội dung HTML đầy đủ, tác giả và hình ảnh từ URL bài viết."""
     try:
-        response = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'})
-        response.raise_for_status()
+        # Thêm headers để giả lập trình duyệt, tăng khả năng thành công
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'DNT': '1', # Do Not Track
+        }
+        response = requests.get(url, headers=headers, timeout=30) # Tăng timeout
+        response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
+
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        author_element = soup.select_one('#js_name')
-        author = author_element.text.strip() if author_element else 'N/A'
+        # Tìm tác giả
+        author_span = soup.find('span', id='js_name')
+        author = author_span.text.strip() if author_span else 'Không rõ'
 
-        content_div = soup.select_one('#js_content')
+        # Tìm nội dung chính
+        content_div = soup.find('div', id='js_content')
         if not content_div:
+            print("    ⚠️ Không tìm thấy thẻ div#js_content trong trang.")
             return None
 
-        # Remove script tags
-        for script in content_div.find_all('script'):
-            script.decompose()
-
+        # Trích xuất tất cả hình ảnh trong nội dung
+        images = []
+        for img_tag in content_div.find_all('img'):
+            img_src = img_tag.get('data-src') or img_tag.get('src')
+            if img_src:
+                images.append(img_src)
+        
+        # Lấy HTML của nội dung
         html_content = str(content_div)
-        images = [img.get('data-src', img.get('src')) for img in content_div.find_all('img') if img.get('data-src') or img.get('src')]
 
         return {
             'author': author,
@@ -205,11 +223,12 @@ def fetch_article_details(url):
             'images': images
         }
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching article details from {url}: {e}")
+        # In ra lỗi cụ thể để dễ debug
+        print(f"    ❌ Lỗi khi tải chi tiết bài viết: {e}")
         return None
     except Exception as e:
-        print(f"    ❌ Lỗi không xác định: {e}")
-        return {"error": str(e)}
+        print(f"    ❌ Lỗi không xác định khi xử lý chi tiết bài viết: {e}")
+        return None
 
 def fetch_all_albums(album_urls):
     all_articles = []
