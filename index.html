@@ -173,84 +173,63 @@
       background: var(--card-bg);
       border-radius: 12px;
       box-shadow: 0 4px 15px var(--shadow-color);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.5s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-10px); /* Nâng card lên nhiều hơn */
+      box-shadow: 0 10px 30px var(--shadow-color); /* Bóng đổ rõ hơn */
+    }
+
+    .card a {
       text-decoration: none;
       color: inherit;
-      display: block;
-      height: 100%;
-    }
-
-    .news-card-wrapper {
-      opacity: 0;
-      transform: translateY(20px);
-      transition: opacity 0.5s ease-out, transform 0.5s ease-out;
-      height: 100%;
-    }
-
-    .news-card {
-      background-color: var(--card-bg);
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
       display: flex;
       flex-direction: column;
       height: 100%;
     }
 
-    .news-card-link:hover .news-card {
-      transform: translateY(-5px);
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-    }
-
-    .card-header {
-      position: relative;
-      padding-top: 56.25%; /* 16:9 Aspect Ratio */
-    }
-
-    .cover-image {
-      position: absolute;
-      top: 0;
-      left: 0;
+    .card img {
       width: 100%;
-      height: 100%;
+      height: 200px;
       object-fit: cover;
-      transition: transform 0.4s ease;
+      display: block;
+      border-top-left-radius: 12px;
+      border-top-right-radius: 12px;
+      transition: transform 0.3s ease; /* Animation cho ảnh khi hover */
     }
 
-    .news-card-link:hover .cover-image {
-      transform: scale(1.05);
+    .card:hover img {
+      transform: scale(1.05); /* Phóng to ảnh nhẹ khi hover */
     }
 
-    .title-overlay {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: 20px;
-      background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 100%);
-      color: #fff;
-    }
-
-    .news-title {
-      font-size: 1.25rem;
-      font-weight: bold;
-      margin: 0;
-      line-height: 1.3;
-    }
-
-    .card-body {
-      padding: 16px;
+    .card-content {
+      padding: 15px 20px;
+      flex-grow: 1;
       display: flex;
       flex-direction: column;
-      flex-grow: 1;
+      justify-content: space-between;
     }
 
-    .meta-info {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.875rem;
-      color: var(--meta-color);
+    .card-content p.title {
+      font-size: 1.15em;
+      font-weight: 600;
+      color: var(--text-color-primary);
+      margin-bottom: 10px;
+      display: -webkit-box; /* Cắt bớt văn bản nếu quá dài */
+      -webkit-line-clamp: 3; /* Giới hạn 3 dòng */
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-content p.date {
+      font-size: 0.9em;
+      color: var(--text-color-secondary);
+      text-align: right;
     }
 
     /* Footer */
@@ -327,27 +306,6 @@
 
   <div class="grid" id="news"></div>
 
-  <template id="news-card-template">
-    <a href="#" class="news-card-link">
-      <div class="news-card-wrapper">
-        <div class="news-card">
-          <div class="card-header">
-            <img src="" alt="Cover Image" class="cover-image" loading="lazy">
-            <div class="title-overlay">
-              <h2 class="news-title"></h2>
-            </div>
-          </div>
-          <div class="card-body">
-            <div class="meta-info">
-              <span class="author"></span>
-              <span class="date"></span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </a>
-  </template>
-
   <footer class="footer">
     &copy; 2025 Tin tức Nghịch Thủy Hàn Mobile. All rights reserved.
   </footer>
@@ -357,8 +315,6 @@
       const loader = document.getElementById('loader');
       const body = document.body;
       const themeToggle = document.getElementById('checkbox');
-      const newsContainer = document.getElementById('news');
-      const newsCardTemplate = document.getElementById('news-card-template');
 
       // Ẩn loader và hiển thị nội dung khi trang tải xong
       const hideLoader = () => {
@@ -369,19 +325,8 @@
         }, 500); // Đợi transition kết thúc
       };
 
-      // Hàm để thêm class 'show' cho từng card với độ trễ
-      const animateCards = () => {
-        const cards = document.querySelectorAll('.news-card-wrapper');
-        cards.forEach((card, index) => {
-          setTimeout(() => {
-            card.style.opacity = '1';
-            card.style.transform = 'translateY(0)';
-          }, index * 100); // Độ trễ 100ms cho mỗi card
-        });
-      };
-
       // Tải và hiển thị tin tức
-      fetch('news.json?v=' + new Date().getTime()) // Thêm cache-busting
+      fetch('news.json')
         .then(response => {
           if (!response.ok) {
             throw new Error('Network response was not ok ' + response.statusText);
@@ -389,44 +334,30 @@
           return response.json();
         })
         .then(data => {
+          const container = document.getElementById('news');
           if (data && data.length > 0) {
-            newsContainer.innerHTML = ''; // Xóa nội dung cũ để tránh trùng lặp
-
-            data.forEach(item => {
-              const newsCardFragment = newsCardTemplate.content.cloneNode(true);
-
-              // Điền dữ liệu vào template
-              newsCardFragment.querySelector('.news-title').textContent = item.title_vi;
-              newsCardFragment.querySelector('.cover-image').src = `https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}`;
-              newsCardFragment.querySelector('.author').textContent = `Tác giả: ${item.author}`;
-              newsCardFragment.querySelector('.date').textContent = item.date;
-              newsCardFragment.querySelector('.news-card-link').href = `article.html?url=${encodeURIComponent(item.url)}`;
-              
-              // Gắn card đã hoàn thiện vào container
-              newsContainer.appendChild(newsCardFragment);
-            });
-
-            animateCards();
+            container.innerHTML = data.map(item => `
+              <div class="card">
+                <a href="${item.url}" target="_blank" rel="noopener noreferrer">
+                  <img src="https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}" alt="${item.title_vi}">
+                  <div class="card-content">
+                    <p class="title">${item.title_vi}</p>
+                    <p class="date">Ngày đăng: ${item.date}</p>
+                  </div>
+                </a>
+              </div>
+            `).join('');
           } else {
-            newsContainer.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không có tin tức nào để hiển thị.</p>';
+            container.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không có tin tức nào để hiển thị.</p>';
           }
-          hideLoader();
+          hideLoader(); // Ẩn loader sau khi tin tức được tải
         })
         .catch(error => {
           console.error('Error fetching news:', error);
-          newsContainer.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không thể tải tin tức. Vui lòng thử lại sau.</p>';
-          hideLoader();
+          const container = document.getElementById('news');
+          container.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không thể tải tin tức. Vui lòng thử lại sau.</p>';
+          hideLoader(); // Ẩn loader ngay cả khi có lỗi
         });
-
-      // Xử lý sự kiện click để hiện/ẩn nội dung
-      newsContainer.addEventListener('click', function(e) {
-        if (e.target.classList.contains('title')) {
-          const content = e.target.nextElementSibling;
-          if (content && content.classList.contains('article-content')) {
-            content.classList.toggle('show');
-          }
-        }
-      });
 
       // Xử lý chuyển đổi theme
       const currentTheme = localStorage.getItem('theme') ? localStorage.getItem('theme') : null;
