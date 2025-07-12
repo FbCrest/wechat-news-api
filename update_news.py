@@ -44,52 +44,46 @@ def fix_terms(text):
         text = text.replace(zh, vi)
     return text
 
-def translate_html_content_zh_to_vi(html_content, retries=3, delay=20):
-    """Dịch nội dung HTML, giữ nguyên thẻ, với cơ chế thử lại và xử lý lỗi rate limit."""
-    if not html_content or not html_content.strip():
+def translate_plain_text_zh_to_vi(text, retries=3, delay=25): # Tăng thời gian chờ khi retry
+    """Dịch một đoạn văn bản thuần túy, với cơ chế thử lại."""
+    if not text or not text.strip():
         return ""
 
     headers = {"Content-Type": "application/json"}
     prompt = (
-        "You are an expert translator. Your task is to translate the text content within the following HTML snippet from Chinese to Vietnamese.\n"
-        "**Crucially, you must preserve all HTML tags and their structure exactly as they are.**\n"
-        "Only translate the user-visible text. Do not translate attribute values like src, href, class, id, etc.\n"
-        "The content is from a gaming news article. Keep game-related terms in English or use common Vietnamese equivalents.\n\n"
-        f"Original HTML:\n{html_content}"
+        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, chuyên về game 'Nghịch Thủy Hàn Mobile'.\n"
+        "Hãy dịch nội dung sau sang tiếng Việt một cách tự nhiên, chính xác, giữ nguyên các dấu xuống dòng.\n"
+        "Không thêm bất kỳ bình luận, ghi chú hay lời chào nào.\n\n"
+        f"Nội dung cần dịch:\n{text}"
     )
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.3,
-            "topP": 0.95,
-            "topK": 40
-        }
+        "generationConfig": {"temperature": 0.4}
     }
 
     for attempt in range(retries):
         try:
-            response = requests.post(API_URL, headers=headers, json=payload, timeout=180)
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
             if response.status_code == 200:
                 result = response.json()
-                raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                cleaned_html = raw_text.strip().removeprefix('```html').removesuffix('```').strip()
-                print("    ✅ Dịch HTML thành công.")
-                return cleaned_html
+                translated_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                print("    ✅ Dịch văn bản thành công.")
+                return fix_terms(translated_text)
             elif response.status_code in [429, 503]:
                 wait_time = delay * (attempt + 1)
-                print(f"    ⚠️ Lỗi {response.status_code} (Quá tải/Giới hạn). Thử lại lần {attempt + 1}/{retries} sau {wait_time}s...")
+                print(f"    ⚠️ Lỗi {response.status_code} (Quá tải/Giới hạn). Thử lại sau {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                print(f"    ❌ Lỗi không mong muốn khi dịch HTML: {response.status_code} - {response.text}")
-                return ""  # Trả về chuỗi rỗng khi có lỗi nghiêm trọng
+                print(f"    ❌ Lỗi dịch: {response.status_code} - {response.text}")
+                return ""
         except requests.exceptions.RequestException as e:
-            print(f"    ❌ Lỗi mạng khi dịch HTML: {e}. Thử lại sau {delay}s...")
+            print(f"    ❌ Lỗi mạng khi dịch: {e}. Thử lại sau {delay}s...")
             time.sleep(delay)
 
-    print("    ❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch HTML.")
+    print("    ❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
     return ""
 
-def batch_translate_zh_to_vi(titles, retries=3, delay=10):
+def batch_translate_zh_to_vi(titles, retries=3, delay=20): # Tăng thời gian chờ khi retry
     joined_titles = "\n".join(titles)
     prompt = (
         "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
@@ -180,50 +174,41 @@ def fetch_articles(url):
     return items
 
 def fetch_article_details(url):
-    """Lấy nội dung HTML đầy đủ, tác giả và hình ảnh từ URL bài viết."""
+    """Lấy nội dung văn bản thuần túy, tác giả và hình ảnh từ URL bài viết."""
     try:
-        # Thêm headers để giả lập trình duyệt, tăng khả năng thành công
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
             'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'DNT': '1', # Do Not Track
         }
-        response = requests.get(url, headers=headers, timeout=30) # Tăng timeout
-        response.raise_for_status() # Ném lỗi nếu status code là 4xx hoặc 5xx
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        # Tìm tác giả
         author_span = soup.find('span', id='js_name')
         author = author_span.text.strip() if author_span else 'Không rõ'
 
-        # Tìm nội dung chính
         content_div = soup.find('div', id='js_content')
         if not content_div:
             print("    ⚠️ Không tìm thấy thẻ div#js_content trong trang.")
             return None
 
-        # Trích xuất tất cả hình ảnh trong nội dung
+        # Trích xuất văn bản thuần túy, giữ lại dấu xuống dòng
+        plain_text = content_div.get_text(separator='\n', strip=True)
+
         images = []
         for img_tag in content_div.find_all('img'):
             img_src = img_tag.get('data-src') or img_tag.get('src')
             if img_src:
                 images.append(img_src)
-        
-        # Lấy HTML của nội dung
-        html_content = str(content_div)
 
         return {
             'author': author,
-            'html_content': html_content,
+            'plain_text': plain_text, # Trả về văn bản thuần túy
             'images': images
         }
     except requests.exceptions.RequestException as e:
-        # In ra lỗi cụ thể để dễ debug
         print(f"    ❌ Lỗi khi tải chi tiết bài viết: {e}")
         return None
     except Exception as e:
@@ -290,12 +275,11 @@ if __name__ == "__main__":
             print(f"    ❌ Không thể tải chi tiết cho: {article_summary['title']}")
             continue
 
-        # Dịch nội dung HTML
-        print("    ↪️  Đang dịch nội dung HTML...")
-        translated_html = translate_html_content_zh_to_vi(details['html_content'])
+        # Dịch nội dung văn bản thuần túy
+        print("    ↪️  Đang dịch nội dung văn bản...")
+        translated_text = translate_plain_text_zh_to_vi(details['plain_text'])
 
-        # Nếu dịch thất bại, không thêm vào danh sách cuối cùng
-        if not translated_html:
+        if not translated_text:
             print(f"    ❌ Dịch nội dung thất bại, bỏ qua bài viết này.")
             continue
 
@@ -307,14 +291,14 @@ if __name__ == "__main__":
             "cover_img": article_summary["cover_img"],
             "date": article_summary["date"],
             "author": details.get("author", "Không rõ"),
-            "html_content_vi": translated_html,
+            "html_content_vi": translated_text,  # Lưu văn bản đã dịch
             "images": details.get("images", [])
         }
         final_news_list.append(full_article_data)
+        print(f"    ✅ Đã xử lý xong bài viết: {vi_title}")
 
-        # Thêm độ trễ 5 giây để tránh rate limit
-        print("    ⏳ Tạm nghỉ 5 giây để tránh quá tải API...")
-        time.sleep(5)
+        # Tăng khoảng nghỉ giữa các bài viết để tránh quá tải
+        time.sleep(15)
 
     # B5: Sắp xếp lại danh sách cuối cùng theo timestamp để đảm bảo thứ tự
     final_news_list.sort(key=lambda x: existing_news.get(x['url'], {}).get('timestamp', 0) if 'timestamp' in existing_news.get(x['url'], {}) else [a for a in articles if a['url'] == x['url']][0]['timestamp'], reverse=True)

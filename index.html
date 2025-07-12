@@ -390,16 +390,22 @@
         })
         .then(data => {
           if (data && data.length > 0) {
-            const newsHTML = data.map(item => {
-              const newsCard = newsCardTemplate.content.cloneNode(true);
-              newsCard.querySelector('.news-title').textContent = item.title_vi;
-              newsCard.querySelector('.cover-image').src = `https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}`;
-              newsCard.querySelector('.author').textContent = `Tác giả: ${item.author}`;
-              newsCard.querySelector('.date').textContent = item.date;
-              newsCard.querySelector('.news-card-link').href = `article.html?id=${item.id}`;
-              return newsCard;
-            }).join('');
-            newsContainer.innerHTML = newsHTML;
+            newsContainer.innerHTML = ''; // Xóa nội dung cũ để tránh trùng lặp
+
+            data.forEach(item => {
+              const newsCardFragment = newsCardTemplate.content.cloneNode(true);
+
+              // Điền dữ liệu vào template
+              newsCardFragment.querySelector('.news-title').textContent = item.title_vi;
+              newsCardFragment.querySelector('.cover-image').src = `https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}`;
+              newsCardFragment.querySelector('.author').textContent = `Tác giả: ${item.author}`;
+              newsCardFragment.querySelector('.date').textContent = item.date;
+              newsCardFragment.querySelector('.news-card-link').href = `article.html?url=${encodeURIComponent(item.url)}`;
+              
+              // Gắn card đã hoàn thiện vào container
+              newsContainer.appendChild(newsCardFragment);
+            });
+
             animateCards();
           } else {
             newsContainer.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không có tin tức nào để hiển thị.</p>';
