@@ -44,6 +44,53 @@ def fix_terms(text):
         text = text.replace(zh, vi)
     return text
 
+def translate_content_zh_to_vi(content, retries=3, delay=15):
+    if not content:
+        return ""
+
+    print("    ↪ Đang dịch nội dung...")
+    prompt = (
+        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, chuyên về game 'Nghịch Thủy Hàn Mobile'.\n"
+        "Hãy dịch nội dung bài viết sau đây sang tiếng Việt một cách tự nhiên, chính xác, giữ nguyên văn phong của một bài hướng dẫn/tin tức game.\n\n"
+        "**Quy tắc dịch:**\n"
+        "- **Giữ nguyên định dạng:** Giữ lại các dấu xuống dòng, khoảng trắng để duy trì cấu trúc của bài viết.\n"
+        "- **Thuật ngữ:** Áp dụng bảng thuật ngữ được cung cấp một cách nhất quán.\n"
+        "- **Không thêm thắt:** Chỉ dịch nội dung được cung cấp, không thêm bất kỳ bình luận, ghi chú hay lời chào nào.\n\n"
+        "**Nội dung cần dịch:**\n\n"
+        + content
+    )
+
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "topP": 0.95,
+            "topK": 40
+        }
+    }
+
+    for attempt in range(retries):
+        try:
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=120) # Timeout dài hơn cho nội dung
+            if response.status_code == 200:
+                result = response.json()
+                raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                print("    ✅ Dịch nội dung thành công.")
+                return fix_terms(raw_text)
+            elif response.status_code == 503:
+                print(f"    ⚠️ Mô hình quá tải khi dịch nội dung. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
+                time.sleep(delay)
+            else:
+                print(f"    ❌ Lỗi dịch nội dung: {response.status_code}")
+                return content # Trả về nội dung gốc nếu lỗi
+        except requests.exceptions.RequestException as e:
+            print(f"    ❌ Lỗi mạng khi dịch nội dung: {e}")
+            time.sleep(delay)
+
+    print("    ❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch nội dung.")
+    return content
+
 def batch_translate_zh_to_vi(titles, retries=3, delay=10):
     joined_titles = "\n".join(titles)
     prompt = (
@@ -210,6 +257,10 @@ if __name__ == "__main__":
             print(f"    ❌ Bỏ qua bài viết do lỗi: {details['error']}")
             continue
 
+        # Dịch nội dung
+        text_content_zh = details.get("text_content", "")
+        text_content_vi = translate_content_zh_to_vi(text_content_zh)
+
         # Kết hợp thông tin
         full_article_data = {
             "title_zh": article["title"],
@@ -219,7 +270,8 @@ if __name__ == "__main__":
             "date": article["date"],
             "author": details.get("author", "Không rõ"),
             "html_content": details.get("html_content", ""),
-            "text_content": details.get("text_content", ""),
+            "text_content_zh": text_content_zh,
+            "text_content_vi": text_content_vi,
             "images": details.get("images", [])
         }
         news_list.append(full_article_data)

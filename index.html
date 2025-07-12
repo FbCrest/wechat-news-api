@@ -176,7 +176,14 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.5s ease;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.5s ease, opacity 0.6s ease, margin-top 0.6s ease; /* Thêm transition cho animation */
+      opacity: 0; /* Mặc định ẩn các card */
+      margin-top: 50px; /* Di chuyển xuống dưới để tạo hiệu ứng trượt lên */
+    }
+
+    .card.show {
+      opacity: 1; /* Hiển thị card */
+      margin-top: 0; /* Di chuyển về vị trí ban đầu */
     }
 
     .card:hover {
@@ -315,6 +322,7 @@
       const loader = document.getElementById('loader');
       const body = document.body;
       const themeToggle = document.getElementById('checkbox');
+      const newsContainer = document.getElementById('news');
 
       // Ẩn loader và hiển thị nội dung khi trang tải xong
       const hideLoader = () => {
@@ -323,6 +331,16 @@
           loader.style.display = 'none';
           body.classList.add('loaded'); // Hiển thị nội dung
         }, 500); // Đợi transition kết thúc
+      };
+
+      // Hàm để thêm class 'show' cho từng card với độ trễ
+      const animateCards = () => {
+        const cards = document.querySelectorAll('.card');
+        cards.forEach((card, index) => {
+          setTimeout(() => {
+            card.classList.add('show');
+          }, index * 100); // Độ trễ 100ms cho mỗi card
+        });
       };
 
       // Tải và hiển thị tin tức
@@ -334,9 +352,8 @@
           return response.json();
         })
         .then(data => {
-          const container = document.getElementById('news');
           if (data && data.length > 0) {
-            container.innerHTML = data.map(item => `
+            newsContainer.innerHTML = data.map(item => `
               <div class="card">
                 <a href="${item.url}" target="_blank" rel="noopener noreferrer">
                   <img src="https://wechat-image.fbcrest.workers.dev/?url=${encodeURIComponent(item.cover_img)}" alt="${item.title_vi}">
@@ -347,15 +364,15 @@
                 </a>
               </div>
             `).join('');
+            animateCards(); // Gọi hàm animateCards sau khi đã render xong HTML
           } else {
-            container.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không có tin tức nào để hiển thị.</p>';
+            newsContainer.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không có tin tức nào để hiển thị.</p>';
           }
           hideLoader(); // Ẩn loader sau khi tin tức được tải
         })
         .catch(error => {
           console.error('Error fetching news:', error);
-          const container = document.getElementById('news');
-          container.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không thể tải tin tức. Vui lòng thử lại sau.</p>';
+          newsContainer.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary);">Không thể tải tin tức. Vui lòng thử lại sau.</p>';
           hideLoader(); // Ẩn loader ngay cả khi có lỗi
         });
 
