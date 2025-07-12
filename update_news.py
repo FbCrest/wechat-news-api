@@ -4,6 +4,7 @@ import os
 import re
 import time
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 # -- Cấu hình --
 API_KEY = os.environ["GEMINI_API_KEY"]
@@ -133,6 +134,49 @@ def fetch_articles(url):
     print(f"✅ {len(items)} bài viết")
     return items
 
+def fetch_article_details(url):
+    print(f"    ↪ Đang lấy chi tiết từ: {url[:40]}...")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Lấy tên tác giả/kênh
+        author_element = soup.find('strong', class_='profile_nickname')
+        author = author_element.get_text(strip=True) if author_element else "Không rõ"
+
+        # Lấy nội dung chính
+        content_element = soup.find('div', class_='rich_media_content')
+        if not content_element:
+            return {"error": "Không tìm thấy nội dung chính"}
+
+        # Trích xuất HTML và text
+        html_content = str(content_element)
+        text_content = content_element.get_text('\n', strip=True)
+
+        # Lấy tất cả hình ảnh, ưu tiên data-src cho ảnh lazy-load
+        images = []
+        for img in content_element.find_all('img'):
+            src = img.get('data-src') or img.get('src')
+            if src and src.startswith('http'):
+                images.append(src)
+
+        return {
+            "author": author,
+            "html_content": html_content,
+            "text_content": text_content,
+            "images": images
+        }
+    except requests.RequestException as e:
+        print(f"    ❌ Lỗi khi lấy chi tiết bài viết: {e}")
+        return {"error": str(e)}
+    except Exception as e:
+        print(f"    ❌ Lỗi không xác định: {e}")
+        return {"error": str(e)}
+
 def fetch_all_albums(album_urls):
     all_articles = []
     for url in album_urls:
@@ -152,18 +196,33 @@ if __name__ == "__main__":
 
     news_list = []
     for i, article in enumerate(articles):
+        print(f"\n[{i+1}/{len(articles)}] Đang xử lý: {article['title']}")
+        
+        # Dịch tiêu đề
         vi_title = vi_titles[i] if i < len(vi_titles) else article["title"]
         if re.search(r'[\u4e00-\u9fff]', vi_title):
-            print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
-        print(f"➡️ {vi_title}")
+            print(f"    ⚠️ Dịch tiêu đề chưa hoàn chỉnh!")
+        print(f"    ➡️ Tiêu đề VI: {vi_title}")
 
-        news_list.append({
+        # Lấy chi tiết bài viết
+        details = fetch_article_details(article['url'])
+        if 'error' in details:
+            print(f"    ❌ Bỏ qua bài viết do lỗi: {details['error']}")
+            continue
+
+        # Kết hợp thông tin
+        full_article_data = {
             "title_zh": article["title"],
             "title_vi": vi_title,
             "url": article["url"],
             "cover_img": article["cover_img"],
-            "date": article["date"]
-        })
+            "date": article["date"],
+            "author": details.get("author", "Không rõ"),
+            "html_content": details.get("html_content", ""),
+            "text_content": details.get("text_content", ""),
+            "images": details.get("images", [])
+        }
+        news_list.append(full_article_data)
 
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_list, f, ensure_ascii=False, indent=2)
