@@ -44,10 +44,13 @@ def fix_terms(text):
     return text
 
 def batch_translate_zh_to_vi(titles, retries=3, delay=10):
+    """
+    Dịch một batch các đoạn text. Nếu gặp lỗi quota (429), trả về None để báo cho main dừng lại.
+    """
     joined_titles = "\n".join(titles)
     prompt = (
         "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
-        "Hãy dịch tất cả các tiêu đề sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, mang màu sắc hấp dẫn, ưu tiên giữ nguyên các thuật ngữ kỹ thuật, tên vật phẩm, và cấu trúc tiêu đề gốc.\n\n"
+        "Hãy dịch tất cả các đoạn sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, giữ thứ tự dòng.\n\n"
         "⚠️ Quy tắc dịch:\n"
         "- Giữ nguyên các cụm số (như 10W, 288).\n"
         "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
@@ -84,11 +87,14 @@ def batch_translate_zh_to_vi(titles, retries=3, delay=10):
             clean_text = cleanup_translation(raw_text)
             lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
             return lines
+        elif response.status_code == 429:
+            print("❌ Lỗi: Vượt quá quota dịch của Gemini API (429). Đã dừng toàn bộ quá trình dịch. Vui lòng kiểm tra quota hoặc thử lại sau.")
+            return None
         elif response.status_code == 503:
             print(f"⚠️ Mô hình quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
             time.sleep(delay)
         else:
-            print("❌ Lỗi dịch:", response.status_code, response.text)
+            print(f"❌ Lỗi dịch ({response.status_code}):", response.text)
             return titles
 
     print("❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
@@ -174,28 +180,55 @@ if __name__ == "__main__":
     articles = fetch_all_albums(ALBUMS)
 
     news_list = []
-    for i, article in enumerate(articles):
-        print(f"\n🔗 Đang lấy nội dung bài viết {i+1}/{len(articles)}: {article['title']}")
+    batch_size = 6  # Dịch tối đa 6 bài/lần để tiết kiệm quota, có thể tăng/giảm tùy độ dài bài
+    all_titles = []
+    all_contents = []
+    for article in articles:
+        all_titles.append(article["title"])
+        # Lấy nội dung bài viết trước, gom lại để dịch batch
         content_data = fetch_article_content(article["url"])
-        content_zh = content_data["content_text"]
-        images = content_data["images"]
-        # Dịch tiêu đề và nội dung
-        print("🌐 Đang dịch tiêu đề + nội dung...")
-        to_translate = [article["title"], content_zh]
-        vi_results = batch_translate_zh_to_vi(to_translate)
-        vi_title = vi_results[0] if len(vi_results) > 0 else article["title"]
-        vi_content = vi_results[1] if len(vi_results) > 1 else content_zh
+        all_contents.append(content_data["content_text"])
+        article["_images"] = content_data["images"]  # tạm lưu images để dùng sau
+
+    # Gom batch để dịch
+    vi_titles = []
+    vi_contents = []
+    quota_exceeded = False
+    for i in range(0, len(articles), batch_size):
+        batch_titles = all_titles[i:i+batch_size]
+        batch_contents = all_contents[i:i+batch_size]
+        print(f"\n🌐 Đang dịch batch tiêu đề {i+1}-{i+len(batch_titles)}...")
+        vi_batch_titles = batch_translate_zh_to_vi(batch_titles)
+        if vi_batch_titles is None:
+            quota_exceeded = True
+            break
+        vi_titles.extend(vi_batch_titles)
+        time.sleep(2)  # delay nhỏ giữa các batch
+        print(f"🌐 Đang dịch batch nội dung {i+1}-{i+len(batch_contents)}...")
+        vi_batch_contents = batch_translate_zh_to_vi(batch_contents)
+        if vi_batch_contents is None:
+            quota_exceeded = True
+            break
+        vi_contents.extend(vi_batch_contents)
+        time.sleep(2)
+
+    if quota_exceeded:
+        print("\n❌ Đã dừng toàn bộ quá trình dịch do vượt quota. news.json sẽ chứa nội dung gốc (chưa dịch)!")
+
+    for idx, article in enumerate(articles):
+        vi_title = vi_titles[idx] if idx < len(vi_titles) else article["title"]
+        vi_content = vi_contents[idx] if idx < len(vi_contents) else all_contents[idx]
         if re.search(r'[\u4e00-\u9fff]', vi_title) or re.search(r'[\u4e00-\u9fff]', vi_content):
-            print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
+            print(f"⚠️ Bài {idx+1}: Dịch chưa hoàn chỉnh!")
         print(f"➡️ {vi_title}")
         news_list.append({
             "title_zh": article["title"],
             "title_vi": vi_title,
-            "content_zh": content_zh,
+            "content_zh": all_contents[idx],
             "content_vi": vi_content,
             "url": article["url"],
             "cover_img": article["cover_img"],
-            "images": images,
+            "images": article["_images"],
             "date": article["date"]
         })
 
