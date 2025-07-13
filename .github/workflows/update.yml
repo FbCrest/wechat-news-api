@@ -24,8 +24,6 @@ jobs:
         run: pip install requests beautifulsoup4
 
       - name: Run update script
-        env:
-          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
         run: python update_news.py
 
       - name: Commit changes
