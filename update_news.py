@@ -66,7 +66,14 @@ def batch_translate_zh_to_vi(titles, retries=3, delay=10):
                 resp = requests.post(CLOUDFLARE_TRANSLATE_URL, headers=headers, json=payload, timeout=30)
                 if resp.status_code == 200:
                     vi_text = resp.json().get("result", "")
-                    if not vi_text:
+                    if isinstance(vi_text, dict):
+                        vi_text = vi_text.get("text", "")
+                    elif isinstance(vi_text, list):
+                        if vi_text and isinstance(vi_text[0], str):
+                            vi_text = vi_text[0]
+                        else:
+                            vi_text = ""
+                    if not isinstance(vi_text, str) or not vi_text:
                         vi_text = text
                     vi_text = fix_terms(cleanup_translation(vi_text))
                     results.append(vi_text)
