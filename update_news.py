@@ -6,9 +6,9 @@ import time
 from datetime import datetime
 
 # -- Cấu hình --
-CLOUDFLARE_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
-CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")  # Đặt biến môi trường này bằng account_id của bạn
-CLOUDFLARE_TRANSLATE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/m2m100-1.2b"
+API_KEY = os.environ["GEMINI_API_KEY"]
+MODEL = "gemini-1.5-flash"
+API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
 ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
@@ -44,53 +44,55 @@ def fix_terms(text):
     return text
 
 def batch_translate_zh_to_vi(titles, retries=3, delay=10):
-    """
-    Dịch danh sách tiêu đề tiếng Trung sang tiếng Việt bằng Cloudflare AI Translate.
-    """
-    if not CLOUDFLARE_API_TOKEN or not CLOUDFLARE_ACCOUNT_ID:
-        print("❌ Thiếu CLOUDFLARE_API_TOKEN hoặc CLOUDFLARE_ACCOUNT_ID.")
-        return titles
-    headers = {
-        "Authorization": f"Bearer {CLOUDFLARE_API_TOKEN}",
-        "Content-Type": "application/json"
+    joined_titles = "\n".join(titles)
+    prompt = (
+        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
+        "Hãy dịch tất cả các tiêu đề sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, mang màu sắc hấp dẫn, ưu tiên giữ nguyên các thuật ngữ kỹ thuật, tên vật phẩm, và cấu trúc tiêu đề gốc.\n\n"
+        "⚠️ Quy tắc dịch:\n"
+        "- Giữ nguyên các cụm số (như 10W, 288).\n"
+        "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
+        "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
+        "- Các từ cố định phải dịch đúng theo bảng sau:\n"
+        "- 流 = lối chơi\n"
+        "- 木桩 = cọc gỗ\n"
+        "- 沧澜 = Thương Lan\n"
+        "- 潮光 = Triều Quang\n"
+        "- 玄机 = Huyền Cơ\n"
+        "- 龙吟 = Long Ngâm\n"
+        "- 神相 = Thần Tương\n"
+        "- 血河 = Huyết Hà\n"
+        "- 碎梦 = Toái Mộng\n"
+        "- 素问 = Tố Vấn\n"
+        "- 九灵 = Cửu Linh\n"
+        "- 铁衣 = Thiết Y\n\n"
+        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
+        + joined_titles
+    )
+
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [
+            {"parts": [{"text": prompt}]}
+        ]
     }
-    results = []
-    for idx, text in enumerate(titles):
-        payload = {
-            "text": text,
-            "source_lang": "zh",
-            "target_lang": "vi"
-        }
-        for attempt in range(retries):
-            try:
-                resp = requests.post(CLOUDFLARE_TRANSLATE_URL, headers=headers, json=payload, timeout=30)
-                if resp.status_code == 200:
-                    vi_text = resp.json().get("result", "")
-                    if isinstance(vi_text, dict):
-                        vi_text = vi_text.get("text", "")
-                    elif isinstance(vi_text, list):
-                        if vi_text and isinstance(vi_text[0], str):
-                            vi_text = vi_text[0]
-                        else:
-                            vi_text = ""
-                    if not isinstance(vi_text, str) or not vi_text:
-                        vi_text = text
-                    vi_text = fix_terms(cleanup_translation(vi_text))
-                    results.append(vi_text)
-                    break
-                else:
-                    print(f"❌ Lỗi dịch dòng {idx+1}: {resp.status_code}: {resp.text}")
-                    if attempt < retries - 1:
-                        time.sleep(delay)
-                    else:
-                        results.append(text)
-            except Exception as e:
-                print(f"❌ Exception khi dịch dòng {idx+1}: {e}")
-                if attempt < retries - 1:
-                    time.sleep(delay)
-                else:
-                    results.append(text)
-    return results
+
+    for attempt in range(retries):
+        response = requests.post(API_URL, headers=headers, json=payload)
+        if response.status_code == 200:
+            result = response.json()
+            raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            clean_text = cleanup_translation(raw_text)
+            lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
+            return lines
+        elif response.status_code == 503:
+            print(f"⚠️ Mô hình quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
+            time.sleep(delay)
+        else:
+            print("❌ Lỗi dịch:", response.status_code, response.text)
+            return titles
+
+    print("❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
+    return titles
 
 def fetch_articles(url):
     print("🔍 Đang lấy dữ liệu từ album...")
@@ -131,6 +133,33 @@ def fetch_articles(url):
     print(f"✅ {len(items)} bài viết")
     return items
 
+from bs4 import BeautifulSoup
+
+def fetch_article_content(url):
+    """
+    Lấy nội dung text và hình ảnh từ một bài viết chi tiết trên WeChat.
+    Trả về dict: {"content_text": ..., "images": [list link ảnh], "content_html": ...}
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml",
+        "Referer": "https://mp.weixin.qq.com/",
+    }
+    resp = requests.get(url, headers=headers)
+    resp.encoding = resp.apparent_encoding
+    soup = BeautifulSoup(resp.text, "html.parser")
+    # Nội dung chính nằm trong div id="js_content"
+    content_div = soup.find("div", id="js_content")
+    if not content_div:
+        return {"content_text": "", "images": [], "content_html": ""}
+    # Lấy text
+    content_text = content_div.get_text("\n", strip=True)
+    # Lấy html
+    content_html = str(content_div)
+    # Lấy link ảnh
+    images = [img["data-src"] for img in content_div.find_all("img", attrs={"data-src": True})]
+    return {"content_text": content_text, "images": images, "content_html": content_html}
+
 def fetch_all_albums(album_urls):
     all_articles = []
     for url in album_urls:
@@ -144,26 +173,70 @@ def fetch_all_albums(album_urls):
 if __name__ == "__main__":
     articles = fetch_all_albums(ALBUMS)
 
-    zh_titles = [a["title"] for a in articles]
-    print("\n🌐 Đang dịch tất cả tiêu đề...")
-    vi_titles = batch_translate_zh_to_vi(zh_titles)
-
     news_list = []
     for i, article in enumerate(articles):
-        vi_title = vi_titles[i] if i < len(vi_titles) else article["title"]
-        if re.search(r'[\u4e00-\u9fff]', vi_title):
+        print(f"\n🔗 Đang lấy nội dung bài viết {i+1}/{len(articles)}: {article['title']}")
+        content_data = fetch_article_content(article["url"])
+        content_zh = content_data["content_text"]
+        images = content_data["images"]
+        # Dịch tiêu đề và nội dung
+        print("🌐 Đang dịch tiêu đề + nội dung...")
+        to_translate = [article["title"], content_zh]
+        vi_results = batch_translate_zh_to_vi(to_translate)
+        vi_title = vi_results[0] if len(vi_results) > 0 else article["title"]
+        vi_content = vi_results[1] if len(vi_results) > 1 else content_zh
+        if re.search(r'[\u4e00-\u9fff]', vi_title) or re.search(r'[\u4e00-\u9fff]', vi_content):
             print(f"⚠️ Bài {i+1}: Dịch chưa hoàn chỉnh!")
         print(f"➡️ {vi_title}")
-
         news_list.append({
             "title_zh": article["title"],
             "title_vi": vi_title,
+            "content_zh": content_zh,
+            "content_vi": vi_content,
             "url": article["url"],
             "cover_img": article["cover_img"],
+            "images": images,
             "date": article["date"]
         })
 
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_list, f, ensure_ascii=False, indent=2)
 
-    print("\n🎉 Hoàn tất! Đã tạo file news.json.")
+    print("\n🎉 Hoàn tất! Đã tạo file news.json với nội dung và hình ảnh.")
+
+    # Render luôn news_full.html
+    def render_news_html(news_json_path, output_html_path):
+        with open(news_json_path, "r", encoding="utf-8") as f:
+            news_list = json.load(f)
+
+        html = [
+            "<html>",
+            "<head>",
+            "<meta charset='utf-8'>",
+            "<title>Tin tức dịch đầy đủ</title>",
+            "<style>body{font-family:sans-serif;max-width:800px;margin:auto;background:#f7f7f7;}h1,h2{color:#2b4f81;}article{background:#fff;padding:24px 32px;margin:32px 0;border-radius:10px;box-shadow:0 2px 8px #0001;}img{max-width:100%;margin:16px 0;border-radius:6px;}</style>",
+            "</head>",
+            "<body>",
+            "<h1>Tin tức dịch đầy đủ</h1>"
+        ]
+        for news in news_list:
+            html.append("<article>")
+            html.append(f"<h2>{news['title_vi']}</h2>")
+            html.append(f"<div style='color:#888;font-size:14px;margin-bottom:8px'>{news['date']}</div>")
+            if news.get("cover_img"):
+                html.append(f"<img src='{news['cover_img']}' alt='cover' loading='lazy'>")
+            # Nội dung bài viết
+            html.append("<div style='white-space:pre-line;font-size:17px;line-height:1.7;margin:18px 0 0 0'>")
+            html.append(news['content_vi'].replace("\n", "<br>"))
+            html.append("</div>")
+            # Ảnh trong bài
+            if news.get("images"):
+                for img_url in news["images"]:
+                    html.append(f"<img src='{img_url}' alt='ảnh bài viết' loading='lazy'>")
+            html.append("</article>")
+        html.append("</body></html>")
+        with open(output_html_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(html))
+        print(f"✅ Đã tạo {output_html_path}")
+
+    render_news_html("news.json", "news_full.html")
