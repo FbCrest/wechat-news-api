@@ -8,7 +8,7 @@ from datetime import datetime
 # -- Cấu hình --
 # Hỗ trợ nhiều API key Gemini (GEMINI_API_KEYS, ngăn cách bởi dấu phẩy)
 # --- DANH SÁCH API KEY ---
-api_keys = [
+GEMINI_API_KEYS = [
     "AIzaSyCMMJaGLuLtMe57jkoC4TYyA1gUX0H0gP4",
     "AIzaSyC0O3EzNqM7jsZ8CxXCi6LipeRku2asto8",
     "AIzaSyDFzjur6pwTq4kDObZiUwoQ4MiVgpyVP3U",
