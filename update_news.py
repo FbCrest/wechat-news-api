@@ -8,7 +8,7 @@ from datetime import datetime
 # -- Cấu hình --
 CLOUDFLARE_API_TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN")
 CLOUDFLARE_ACCOUNT_ID = os.environ.get("CLOUDFLARE_ACCOUNT_ID")  # Đặt biến môi trường này bằng account_id của bạn
-CLOUDFLARE_TRANSLATE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/translate"
+CLOUDFLARE_TRANSLATE_URL = f"https://api.cloudflare.com/client/v4/accounts/{CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/meta/m2m100-1.2b"
 
 ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
