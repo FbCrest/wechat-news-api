@@ -1,17 +1,20 @@
 import requests
 import json
-import os
+
 import re
 import time
 from datetime import datetime
 
 # -- Cấu hình --
 # Hỗ trợ nhiều API key Gemini (GEMINI_API_KEYS, ngăn cách bởi dấu phẩy)
-API_KEYS = os.environ.get("GEMINI_API_KEYS")
-if API_KEYS:
-    GEMINI_API_KEYS = [k.strip() for k in API_KEYS.split(",") if k.strip()]
-else:
-    GEMINI_API_KEYS = [os.environ["GEMINI_API_KEY"]]
+# --- DANH SÁCH API KEY ---
+api_keys = [
+    "AIzaSyCMMJaGLuLtMe57jkoC4TYyA1gUX0H0gP4",
+    "AIzaSyC0O3EzNqM7jsZ8CxXCi6LipeRku2asto8",
+    "AIzaSyDFzjur6pwTq4kDObZiUwoQ4MiVgpyVP3U",
+    "AIzaSyCpabIGPt8YgE0kB_fnFWANBqhb9wEX-5I"
+]
+# -------------------------
 MODEL = "gemini-1.5-flash"
 API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}".format(MODEL, "{}")
 
