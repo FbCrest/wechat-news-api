@@ -91,24 +91,25 @@ def batch_translate_zh_to_vi_multi(titles, api_keys, retries=3, delay=10):
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
         for attempt in range(retries):
-            response = requests.post(api_url, headers=headers, json=payload)
-            if response.status_code == 200:
-                result = response.json()
-                raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                clean_text = cleanup_translation(raw_text)
-                lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
-                return lines
-            elif response.status_code == 429:
-                print(f"❌ Key #{key_idx+1} hết quota (429), sẽ bỏ qua key này cho các batch tiếp theo.")
-                key_status[key_idx] = False
+            try:
+                response = requests.post(api_url, headers=headers, json=payload)
+                if response.status_code == 200:
+                    result = response.json()
+                    raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                    clean_text = cleanup_translation(raw_text)
+                    lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
+                    return lines
+                elif response.status_code == 429:
+                    print(f"🔑 Key {key_idx} đã hết quota. Tạm ngưng sử dụng key này.")
+                    key_status[key_idx] = False
+                else:
+                    print(f"⚠️ Lỗi API không xác định với key {key_idx}. Status: {response.status_code}")
+                    print(f"➡️ Chi tiết lỗi: {response.text}")
                 return None
-            elif response.status_code == 503:
-                print(f"⚠️ Key #{key_idx+1} quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
-                time.sleep(delay)
-            else:
-                print(f"❌ Lỗi dịch ({response.status_code}) với key #{key_idx+1}: {response.text}")
+            except requests.exceptions.RequestException as e:
+                print(f"⚠️ Lỗi kết nối với key {key_idx}: {e}")
                 return None
-        print(f"❌ Key #{key_idx+1} thử lại nhiều lần vẫn lỗi. Bỏ qua batch này.")
+        print(f"❌ Key {key_idx} thử lại nhiều lần vẫn lỗi. Bỏ qua batch này.")
         return None
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(api_keys)) as executor:
@@ -126,7 +127,7 @@ def batch_translate_zh_to_vi_multi(titles, api_keys, retries=3, delay=10):
                 start = idx * batch_size
                 results[start:start+len(batch)] = lines
             elif not key_status[key_idx]:
-                print(f"⚠️ Batch {idx+1} không dịch được do key #{key_idx+1} hết quota.")
+                print(f"⚠️ Batch {idx+1} không dịch được do key {key_idx} hết quota.")
             else:
                 print(f"⚠️ Batch {idx+1} không dịch được. Trả về nội dung gốc.")
                 start = idx * batch_size
