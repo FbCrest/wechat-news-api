@@ -25,14 +25,13 @@ jobs:
 
       - name: Run update script
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python update_news.py
 
       - name: Commit changes
         run: |
           git config user.name "GitHub Actions"
           git config user.email "github-actions@github.com"
-          git add news.json
-          git commit -m "Update news.json" || echo "No changes"
+          git add news.json news_full.html
+          git commit -m "Update news.json and news_full.html" || echo "No changes"
           git push https://x-access-token:${{ secrets.GH_PAT }}@github.com/${{ github.repository }}.git HEAD:main
