@@ -1,22 +1,14 @@
 import requests
 import json
-
+import os
 import re
 import time
 from datetime import datetime
 
 # -- Cấu hình --
-# Hỗ trợ nhiều API key Gemini (GEMINI_API_KEYS, ngăn cách bởi dấu phẩy)
-# --- DANH SÁCH API KEY ---
-GEMINI_API_KEYS = [
-    "AIzaSyCMMJaGLuLtMe57jkoC4TYyA1gUX0H0gP4",
-    "AIzaSyC0O3EzNqM7jsZ8CxXCi6LipeRku2asto8",
-    "AIzaSyDFzjur6pwTq4kDObZiUwoQ4MiVgpyVP3U",
-    "AIzaSyCpabIGPt8YgE0kB_fnFWANBqhb9wEX-5I"
-]
-# -------------------------
+API_KEY = os.environ["GEMINI_API_KEY"]
 MODEL = "gemini-1.5-flash"
-API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}".format(MODEL, "{}")
+API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
 
 ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
@@ -51,95 +43,70 @@ def fix_terms(text):
         text = text.replace(zh, vi)
     return text
 
-import concurrent.futures
+def batch_translate_zh_to_vi(titles, retries=3, delay=10):
+    print(f"   - Gửi {len(titles)} tiêu đề đến API dịch...")
+    joined_titles = "\n".join(titles)
+    prompt = (
+        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
+        "Hãy dịch tất cả các tiêu đề sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, mang màu sắc hấp dẫn, ưu tiên giữ nguyên các thuật ngữ kỹ thuật, tên vật phẩm, và cấu trúc tiêu đề gốc.\n\n"
+        "⚠️ Quy tắc dịch:\n"
+        "- Giữ nguyên các cụm số (như 10W, 288).\n"
+        "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
+        "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
+        "- Các từ cố định phải dịch đúng theo bảng sau:\n"
+        "- 流 = lối chơi\n"
+        "- 木桩 = cọc gỗ\n"
+        "- 沧澜 = Thương Lan\n"
+        "- 潮光 = Triều Quang\n"
+        "- 玄机 = Huyền Cơ\n"
+        "- 龙吟 = Long Ngâm\n"
+        "- 神相 = Thần Tương\n"
+        "- 血河 = Huyết Hà\n"
+        "- 碎梦 = Toái Mộng\n"
+        "- 素问 = Tố Vấn\n"
+        "- 九灵 = Cửu Linh\n"
+        "- 铁衣 = Thiết Y\n\n"
+        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
+        + joined_titles
+    )
 
-def batch_translate_zh_to_vi_multi(texts, api_keys, retries=3, delay=10):
-    """
-    Dịch một danh sách văn bản, chia thành các batch nhỏ.
-    Tự động phân phối cho các API key và thử lại với key khác nếu một key hết quota.
-    """
-    results = [None] * len(texts)
-    batch_size = 3  # Dịch 3 mục mỗi lần để tránh quá tải
-    untranslated_batches = list(enumerate([texts[i:i+batch_size] for i in range(0, len(texts), batch_size)]))
-    active_key_indices = list(range(len(api_keys)))
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "contents": [
+            {"parts": [{"text": prompt}]}
+        ]
+    }
 
-    def translate_batch(batch, key_idx):
-        api_key = api_keys[key_idx]
-        api_url = API_URL_TEMPLATE.format(api_key)
-        joined_texts = "\n".join(batch)
-        prompt = (
-            "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
-            "Hãy dịch tất cả các đoạn sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, giữ thứ tự dòng.\n\n"
-            "⚠️ Quy tắc dịch:\n"
-            "- Giữ nguyên các cụm số (như 10W, 288).\n"
-            "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
-            "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
-            "- Các từ cố định phải dịch đúng theo bảng sau:\n"
-            "- 流 = lối chơi\n- 木桩 = cọc gỗ\n- 沧澜 = Thương Lan\n- 潮光 = Triều Quang\n- 玄机 = Huyền Cơ\n- 龙吟 = Long Ngâm\n- 神相 = Thần Tương\n- 血河 = Huyết Hà\n- 碎梦 = Toái Mộng\n- 素问 = Tố Vấn\n- 九灵 = Cửu Linh\n- 铁衣 = Thiết Y\n\n"
-            "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
-            + joined_texts
-        )
-        headers = {"Content-Type": "application/json"}
-        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    for attempt in range(retries):
         try:
-            response = requests.post(api_url, headers=headers, json=payload, timeout=90)
-            if response.status_code == 200:
-                result = response.json()
-                raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                lines = [fix_terms(line.strip()) for line in cleanup_translation(raw_text).split('\n') if line.strip()]
-                return lines, None
-            elif response.status_code == 429:
-                return None, "quota_exceeded"
-            else:
-                print(f"⚠️ Lỗi API không xác định với key {key_idx}. Status: {response.status_code}\n{response.text}")
-                return None, "api_error"
+            response = requests.post(API_URL, headers=headers, json=payload)
+            response.raise_for_status()  # Sẽ báo lỗi cho các mã 4xx hoặc 5xx
+
+            result = response.json()
+            if "candidates" not in result or not result["candidates"]:
+                print(f"   - ❌ Lỗi: Phản hồi API không hợp lệ ở lần thử {attempt + 1}. Thiếu 'candidates'.")
+                continue # Thử lại
+
+            raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            clean_text = cleanup_translation(raw_text)
+            lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
+            print(f"   - ✅ Dịch thành công {len(lines)}/{len(titles)} tiêu đề.")
+            return lines
+
         except requests.exceptions.RequestException as e:
-            print(f"⚠️ Lỗi kết nối với key {key_idx}: {e}")
-            return None, "connection_error"
+            print(f"   - ❌ Lỗi kết nối mạng (lần {attempt + 1}/{retries}): {e}")
+        except Exception as e:
+            print(f"   - ❌ Lỗi không xác định (lần {attempt + 1}/{retries}): {e}")
+        
+        if attempt < retries - 1:
+            print(f"   - ⚠️ Thử lại sau {delay} giây...")
+            time.sleep(delay)
 
-    while untranslated_batches and active_key_indices:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(active_key_indices)) as executor:
-            future_to_batch = {}
-            key_iterator = iter(active_key_indices)
-            # Gửi các batch chưa dịch đi
-            for batch_idx, batch_content in untranslated_batches:
-                try:
-                    key_idx = next(key_iterator)
-                    future = executor.submit(translate_batch, batch_content, key_idx)
-                    future_to_batch[future] = (batch_idx, batch_content, key_idx)
-                except StopIteration:
-                    break # Hết key để phân phối
-
-            processed_batches = []
-            for future in concurrent.futures.as_completed(future_to_batch):
-                batch_idx, batch_content, key_idx = future_to_batch[future]
-                processed_batches.append((batch_idx, batch_content))
-                try:
-                    lines, error_type = future.result()
-                    if lines:
-                        start_pos = batch_idx * batch_size
-                        results[start_pos:start_pos + len(lines)] = lines
-                    elif error_type == "quota_exceeded":
-                        print(f"🔑 Key {key_idx} hết quota. Loại bỏ khỏi danh sách hoạt động.")
-                        if key_idx in active_key_indices:
-                            active_key_indices.remove(key_idx)
-                except Exception as exc:
-                    print(f"❌ Batch {batch_idx} gây ra exception: {exc}")
-
-            # Cập nhật danh sách các batch chưa dịch thành công
-            all_processed_indices = {item[0] for item in processed_batches}
-            untranslated_batches = [item for item in untranslated_batches if item[0] not in all_processed_indices]
-
-    # Điền nội dung gốc cho các phần không dịch được
-    for i, res in enumerate(results):
-        if res is None:
-            results[i] = texts[i]
-            print(f"⚠️ Không dịch được mục {i}, sử dụng nội dung gốc.")
-
-    return results
+    print("   - ❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
+    return titles
 
 def fetch_articles(url):
-    print("🔍 Đang lấy dữ liệu từ album...")
+    print(f"   - 🚚 Đang lấy dữ liệu từ album: {url[:70]}...")
     headers = {
         "User-Agent": "Mozilla/5.0",
         "Accept": "application/json, text/plain, */*",
@@ -174,134 +141,83 @@ def fetch_articles(url):
             "date": date_str
         })
 
-    print(f"✅ {len(items)} bài viết")
+    print(f"      -> Tìm thấy {len(items)} bài viết.")
     return items
 
-from bs4 import BeautifulSoup
-
-def fetch_article_content(url):
-    """
-    Lấy nội dung text và hình ảnh từ một bài viết chi tiết trên WeChat.
-    Trả về dict: {"content_text": ..., "images": [list link ảnh], "content_html": ...}
-    """
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "text/html,application/xhtml+xml,application/xml",
-        "Referer": "https://mp.weixin.qq.com/",
-    }
-    resp = requests.get(url, headers=headers)
-    resp.encoding = resp.apparent_encoding
-    soup = BeautifulSoup(resp.text, "html.parser")
-    # Nội dung chính nằm trong div id="js_content"
-    content_div = soup.find("div", id="js_content")
-    if not content_div:
-        return {"content_text": "", "images": [], "content_html": ""}
-    # Lấy text
-    content_text = content_div.get_text("\n", strip=True)
-    # Lấy html
-    content_html = str(content_div)
-    # Lấy link ảnh
-    images = [img["data-src"] for img in content_div.find_all("img", attrs={"data-src": True})]
-    return {"content_text": content_text, "images": images, "content_html": content_html}
-
 def fetch_all_albums(album_urls):
+    print("\n---\n📰 Bắt đầu quá trình lấy tin tức từ các album...")
     all_articles = []
     for url in album_urls:
         articles = fetch_articles(url)
         top_4 = sorted(articles, key=lambda x: x["timestamp"], reverse=True)[:4]
         all_articles.extend(top_4)
     sorted_articles = sorted(all_articles, key=lambda x: x["timestamp"], reverse=True)
+    print(f"   - 👍 Đã lấy và sắp xếp xong. Tổng cộng có {len(sorted_articles)} bài viết.")
     return sorted_articles
+
+def load_existing_translations():
+    """Đọc file news.json hiện có và tạo một từ điển các bản dịch."""
+    print("\n---\n📖 Đang tải các bản dịch đã có từ `news.json`...")
+    if not os.path.exists("news.json"):
+        print("   - ⚠️ Không tìm thấy file `news.json`. Bắt đầu với bộ nhớ đệm trống.")
+        return {}
+    try:
+        with open("news.json", "r", encoding="utf-8") as f:
+            news_data = json.load(f)
+            translations = {item['title_zh']: item['title_vi'] for item in news_data if 'title_zh' in item and 'title_vi' in item}
+            print(f"   - ✅ Đã tải thành công {len(translations)} bản dịch.")
+            return translations
+    except (json.JSONDecodeError, FileNotFoundError) as e:
+        print(f"   - ❌ Lỗi khi đọc `news.json`: {e}. Bắt đầu với bộ nhớ đệm trống.")
+        return {}
 
 # -- MAIN --
 if __name__ == "__main__":
+    print("🚀 Bắt đầu chạy script cập nhật tin tức...")
+    
+    translations = load_existing_translations()
     articles = fetch_all_albums(ALBUMS)
 
+    all_zh_titles = [a["title"] for a in articles]
+    titles_to_translate = [title for title in all_zh_titles if title not in translations]
+
+    print(f"   - 📊 Tổng hợp: Đã tải {len(translations)} bản dịch, phát hiện {len(titles_to_translate)} tiêu đề mới.")
+
+    print("\n---\n🌐 Bắt đầu quá trình dịch thuật...")
+    if titles_to_translate:
+        print(f"   - Tìm thấy {len(titles_to_translate)} tiêu đề mới cần dịch.")
+        newly_translated_titles = batch_translate_zh_to_vi(titles_to_translate)
+
+        print("   - Cập nhật bộ nhớ đệm bản dịch...")
+        for zh_title, vi_title in zip(titles_to_translate, newly_translated_titles):
+            translations[zh_title] = vi_title
+        print("   - ✅ Đã cập nhật xong.")
+    else:
+        print("   - ✅ Không có tiêu đề mới nào cần dịch. Tất cả đều đã có trong bộ nhớ đệm.")
+
     news_list = []
-    batch_size = 6  # Dịch tối đa 6 bài/lần để tiết kiệm quota, có thể tăng/giảm tùy độ dài bài
-    all_titles = []
-    all_contents = []
+    print("\n---\n✍️  Bắt đầu tạo danh sách tin tức cuối cùng...")
     for article in articles:
-        all_titles.append(article["title"])
-        # Lấy nội dung bài viết trước, gom lại để dịch batch
-        content_data = fetch_article_content(article["url"])
-        all_contents.append(content_data["content_text"])
-        article["_images"] = content_data["images"]  # tạm lưu images để dùng sau
+        zh_title = article["title"]
+        vi_title = translations.get(zh_title, zh_title)
 
-    # Gom batch để dịch
-    vi_titles = []
-    vi_contents = []
-    quota_exceeded = False
-    print("\n🌐 Đang dịch tất cả tiêu đề...")
-    vi_titles = batch_translate_zh_to_vi_multi(all_titles, GEMINI_API_KEYS)
-    if vi_titles is None:
-        print("\n❌ Đã dừng dịch do hết quota tất cả key. news.json sẽ chứa nội dung gốc!")
-        vi_titles = all_titles
-    time.sleep(2)
-    print("🌐 Đang dịch tất cả nội dung...")
-    vi_contents = batch_translate_zh_to_vi_multi(all_contents, GEMINI_API_KEYS)
-    if vi_contents is None:
-        print("\n❌ Đã dừng dịch do hết quota tất cả key. news.json sẽ chứa nội dung gốc!")
-        vi_contents = all_contents
-    time.sleep(2)
+        if re.search(r'[\u4e00-\u9fff]', vi_title) and vi_title == zh_title:
+            print(f"   - ⚠️  Xử lý (chưa dịch): {zh_title[:50]}...")
+        else:
+            print(f"   - ✔️  Xử lý (đã dịch): {vi_title[:50]}...")
 
-    for idx, article in enumerate(articles):
-        raw_title = article["title"]
-        raw_content = all_contents[idx]
-        vi_title = vi_titles[idx] if idx < len(vi_titles) and vi_titles[idx] else raw_title
-        vi_content = vi_contents[idx] if idx < len(vi_contents) and vi_contents[idx] else raw_content
-        if re.search(r'[\u4e00-\u9fff]', vi_title) or re.search(r'[\u4e00-\u9fff]', vi_content):
-            print(f"⚠️ Bài {idx+1}: Dịch chưa hoàn chỉnh!")
-        print(f"➡️ {vi_title}")
         news_list.append({
-            "title_zh": raw_title,
+            "title_zh": zh_title,
             "title_vi": vi_title,
-            "content_zh": raw_content,
-            "content_vi": vi_content,
             "url": article["url"],
             "cover_img": article["cover_img"],
-            "images": article["_images"],
             "date": article["date"]
         })
+    print("   - 👍 Đã xử lý xong tất cả các bài viết.")
 
+    print("\n---\n💾 Đang ghi dữ liệu vào `news.json`...")
     with open("news.json", "w", encoding="utf-8") as f:
         json.dump(news_list, f, ensure_ascii=False, indent=2)
 
-    print("\n🎉 Hoàn tất! Đã tạo file news.json với nội dung và hình ảnh.")
-
-    # Render luôn news_full.html
-    def render_news_html(news_json_path, output_html_path):
-        with open(news_json_path, "r", encoding="utf-8") as f:
-            news_list = json.load(f)
-
-        html = [
-            "<html>",
-            "<head>",
-            "<meta charset='utf-8'>",
-            "<title>Tin tức dịch đầy đủ</title>",
-            "<style>body{font-family:sans-serif;max-width:800px;margin:auto;background:#f7f7f7;}h1,h2{color:#2b4f81;}article{background:#fff;padding:24px 32px;margin:32px 0;border-radius:10px;box-shadow:0 2px 8px #0001;}img{max-width:100%;margin:16px 0;border-radius:6px;}</style>",
-            "</head>",
-            "<body>",
-            "<h1>Tin tức dịch đầy đủ</h1>"
-        ]
-        for news in news_list:
-            html.append("<article>")
-            html.append(f"<h2>{news['title_vi']}</h2>")
-            html.append(f"<div style='color:#888;font-size:14px;margin-bottom:8px'>{news['date']}</div>")
-            if news.get("cover_img"):
-                html.append(f"<img src='{news['cover_img']}' alt='cover' loading='lazy'>")
-            # Nội dung bài viết
-            html.append("<div style='white-space:pre-line;font-size:17px;line-height:1.7;margin:18px 0 0 0'>")
-            html.append(news['content_vi'].replace("\n", "<br>"))
-            html.append("</div>")
-            # Ảnh trong bài
-            if news.get("images"):
-                for img_url in news["images"]:
-                    html.append(f"<img src='{img_url}' alt='ảnh bài viết' loading='lazy'>")
-            html.append("</article>")
-        html.append("</body></html>")
-        with open(output_html_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(html))
-        print(f"✅ Đã tạo {output_html_path}")
-
-    render_news_html("news.json", "news_full.html")
+    print("   - ✅ Đã ghi thành công.")
+    print("\n🎉 Hoàn tất! Script đã chạy xong.")
