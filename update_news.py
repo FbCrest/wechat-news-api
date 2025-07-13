@@ -6,9 +6,14 @@ import time
 from datetime import datetime
 
 # -- Cấu hình --
-API_KEY = os.environ["GEMINI_API_KEY"]
+# Hỗ trợ nhiều API key Gemini (GEMINI_API_KEYS, ngăn cách bởi dấu phẩy)
+API_KEYS = os.environ.get("GEMINI_API_KEYS")
+if API_KEYS:
+    GEMINI_API_KEYS = [k.strip() for k in API_KEYS.split(",") if k.strip()]
+else:
+    GEMINI_API_KEYS = [os.environ["GEMINI_API_KEY"]]
 MODEL = "gemini-1.5-flash"
-API_URL = f"https://generativelanguage.googleapis.com/v1/models/{MODEL}:generateContent?key={API_KEY}"
+API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1/models/{}:generateContent?key={}".format(MODEL, "{}")
 
 ALBUMS = [
     "https://mp.weixin.qq.com/mp/appmsgalbum?action=getalbum&__biz=MzU5NjU1NjY1Mw==&album_id=3447004682407854082&f=json",
@@ -43,62 +48,93 @@ def fix_terms(text):
         text = text.replace(zh, vi)
     return text
 
-def batch_translate_zh_to_vi(titles, retries=3, delay=10):
-    """
-    Dịch một batch các đoạn text. Nếu gặp lỗi quota (429), trả về None để báo cho main dừng lại.
-    """
-    joined_titles = "\n".join(titles)
-    prompt = (
-        "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
-        "Hãy dịch tất cả các đoạn sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, giữ thứ tự dòng.\n\n"
-        "⚠️ Quy tắc dịch:\n"
-        "- Giữ nguyên các cụm số (như 10W, 288).\n"
-        "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
-        "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
-        "- Các từ cố định phải dịch đúng theo bảng sau:\n"
-        "- 流 = lối chơi\n"
-        "- 木桩 = cọc gỗ\n"
-        "- 沧澜 = Thương Lan\n"
-        "- 潮光 = Triều Quang\n"
-        "- 玄机 = Huyền Cơ\n"
-        "- 龙吟 = Long Ngâm\n"
-        "- 神相 = Thần Tương\n"
-        "- 血河 = Huyết Hà\n"
-        "- 碎梦 = Toái Mộng\n"
-        "- 素问 = Tố Vấn\n"
-        "- 九灵 = Cửu Linh\n"
-        "- 铁衣 = Thiết Y\n\n"
-        "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
-        + joined_titles
-    )
+import concurrent.futures
 
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [
-            {"parts": [{"text": prompt}]}
-        ]
-    }
+def batch_translate_zh_to_vi_multi(titles, api_keys, retries=3, delay=10):
+    """
+    Chia batch nhỏ, gửi song song lên nhiều key. Nếu key nào hết quota sẽ bỏ qua ở các lần sau.
+    """
+    results = [None] * len(titles)
+    batch_size = max(1, len(titles) // len(api_keys))
+    batches = [titles[i:i+batch_size] for i in range(0, len(titles), batch_size)]
+    key_status = [True] * len(api_keys)  # True = còn dùng được
 
-    for attempt in range(retries):
-        response = requests.post(API_URL, headers=headers, json=payload)
-        if response.status_code == 200:
-            result = response.json()
-            raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-            clean_text = cleanup_translation(raw_text)
-            lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
-            return lines
-        elif response.status_code == 429:
-            print("❌ Lỗi: Vượt quá quota dịch của Gemini API (429). Đã dừng toàn bộ quá trình dịch. Vui lòng kiểm tra quota hoặc thử lại sau.")
+    def translate_with_key(batch, key_idx):
+        if not key_status[key_idx]:
             return None
-        elif response.status_code == 503:
-            print(f"⚠️ Mô hình quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
-            time.sleep(delay)
-        else:
-            print(f"❌ Lỗi dịch ({response.status_code}):", response.text)
-            return titles
+        api_key = api_keys[key_idx]
+        api_url = API_URL_TEMPLATE.format(api_key)
+        joined_titles = "\n".join(batch)
+        prompt = (
+            "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
+            "Hãy dịch tất cả các đoạn sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, giữ thứ tự dòng.\n\n"
+            "⚠️ Quy tắc dịch:\n"
+            "- Giữ nguyên các cụm số (như 10W, 288).\n"
+            "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
+            "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
+            "- Các từ cố định phải dịch đúng theo bảng sau:\n"
+            "- 流 = lối chơi\n"
+            "- 木桩 = cọc gỗ\n"
+            "- 沧澜 = Thương Lan\n"
+            "- 潮光 = Triều Quang\n"
+            "- 玄机 = Huyền Cơ\n"
+            "- 龙吟 = Long Ngâm\n"
+            "- 神相 = Thần Tương\n"
+            "- 血河 = Huyết Hà\n"
+            "- 碎梦 = Toái Mộng\n"
+            "- 素问 = Tố Vấn\n"
+            "- 九灵 = Cửu Linh\n"
+            "- 铁衣 = Thiết Y\n\n"
+            "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
+            + joined_titles
+        )
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        for attempt in range(retries):
+            response = requests.post(api_url, headers=headers, json=payload)
+            if response.status_code == 200:
+                result = response.json()
+                raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                clean_text = cleanup_translation(raw_text)
+                lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
+                return lines
+            elif response.status_code == 429:
+                print(f"❌ Key #{key_idx+1} hết quota (429), sẽ bỏ qua key này cho các batch tiếp theo.")
+                key_status[key_idx] = False
+                return None
+            elif response.status_code == 503:
+                print(f"⚠️ Key #{key_idx+1} quá tải. Thử lại lần {attempt + 1}/{retries} sau {delay}s...")
+                time.sleep(delay)
+            else:
+                print(f"❌ Lỗi dịch ({response.status_code}) với key #{key_idx+1}: {response.text}")
+                return None
+        print(f"❌ Key #{key_idx+1} thử lại nhiều lần vẫn lỗi. Bỏ qua batch này.")
+        return None
 
-    print("❌ Thử lại nhiều lần nhưng vẫn lỗi. Bỏ qua dịch.")
-    return titles
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(api_keys)) as executor:
+        future_to_idx = {}
+        for idx, batch in enumerate(batches):
+            key_idx = idx % len(api_keys)
+            if not key_status[key_idx]:
+                continue
+            future = executor.submit(translate_with_key, batch, key_idx)
+            future_to_idx[future] = (idx, batch, key_idx)
+        for future in concurrent.futures.as_completed(future_to_idx):
+            idx, batch, key_idx = future_to_idx[future]
+            lines = future.result()
+            if lines is not None and len(lines) == len(batch):
+                start = idx * batch_size
+                results[start:start+len(batch)] = lines
+            elif not key_status[key_idx]:
+                print(f"⚠️ Batch {idx+1} không dịch được do key #{key_idx+1} hết quota.")
+            else:
+                print(f"⚠️ Batch {idx+1} không dịch được. Trả về nội dung gốc.")
+                start = idx * batch_size
+                results[start:start+len(batch)] = batch
+    if not any(key_status):
+        print("❌ Tất cả API key đều hết quota. Dừng dịch.")
+        return None
+    return results
 
 def fetch_articles(url):
     print("🔍 Đang lấy dữ liệu từ album...")
@@ -194,26 +230,18 @@ if __name__ == "__main__":
     vi_titles = []
     vi_contents = []
     quota_exceeded = False
-    for i in range(0, len(articles), batch_size):
-        batch_titles = all_titles[i:i+batch_size]
-        batch_contents = all_contents[i:i+batch_size]
-        print(f"\n🌐 Đang dịch batch tiêu đề {i+1}-{i+len(batch_titles)}...")
-        vi_batch_titles = batch_translate_zh_to_vi(batch_titles)
-        if vi_batch_titles is None:
-            quota_exceeded = True
-            break
-        vi_titles.extend(vi_batch_titles)
-        time.sleep(2)  # delay nhỏ giữa các batch
-        print(f"🌐 Đang dịch batch nội dung {i+1}-{i+len(batch_contents)}...")
-        vi_batch_contents = batch_translate_zh_to_vi(batch_contents)
-        if vi_batch_contents is None:
-            quota_exceeded = True
-            break
-        vi_contents.extend(vi_batch_contents)
-        time.sleep(2)
-
-    if quota_exceeded:
-        print("\n❌ Đã dừng toàn bộ quá trình dịch do vượt quota. news.json sẽ chứa nội dung gốc (chưa dịch)!")
+    print("\n🌐 Đang dịch tất cả tiêu đề...")
+    vi_titles = batch_translate_zh_to_vi_multi(all_titles, GEMINI_API_KEYS)
+    if vi_titles is None:
+        print("\n❌ Đã dừng dịch do hết quota tất cả key. news.json sẽ chứa nội dung gốc!")
+        vi_titles = all_titles
+    time.sleep(2)
+    print("🌐 Đang dịch tất cả nội dung...")
+    vi_contents = batch_translate_zh_to_vi_multi(all_contents, GEMINI_API_KEYS)
+    if vi_contents is None:
+        print("\n❌ Đã dừng dịch do hết quota tất cả key. news.json sẽ chứa nội dung gốc!")
+        vi_contents = all_contents
+    time.sleep(2)
 
     for idx, article in enumerate(articles):
         vi_title = vi_titles[idx] if idx < len(vi_titles) else article["title"]
