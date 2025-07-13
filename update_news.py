@@ -244,15 +244,17 @@ if __name__ == "__main__":
     time.sleep(2)
 
     for idx, article in enumerate(articles):
-        vi_title = vi_titles[idx] if idx < len(vi_titles) else article["title"]
-        vi_content = vi_contents[idx] if idx < len(vi_contents) else all_contents[idx]
+        raw_title = article["title"]
+        raw_content = all_contents[idx]
+        vi_title = vi_titles[idx] if idx < len(vi_titles) and vi_titles[idx] else raw_title
+        vi_content = vi_contents[idx] if idx < len(vi_contents) and vi_contents[idx] else raw_content
         if re.search(r'[\u4e00-\u9fff]', vi_title) or re.search(r'[\u4e00-\u9fff]', vi_content):
             print(f"⚠️ Bài {idx+1}: Dịch chưa hoàn chỉnh!")
         print(f"➡️ {vi_title}")
         news_list.append({
-            "title_zh": article["title"],
+            "title_zh": raw_title,
             "title_vi": vi_title,
-            "content_zh": all_contents[idx],
+            "content_zh": raw_content,
             "content_vi": vi_content,
             "url": article["url"],
             "cover_img": article["cover_img"],
