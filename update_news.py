@@ -50,21 +50,20 @@ def fix_terms(text):
 
 import concurrent.futures
 
-def batch_translate_zh_to_vi_multi(titles, api_keys, retries=3, delay=10):
+def batch_translate_zh_to_vi_multi(texts, api_keys, retries=3, delay=10):
     """
-    Chia batch nhỏ, gửi song song lên nhiều key. Nếu key nào hết quota sẽ bỏ qua ở các lần sau.
+    Dịch một danh sách văn bản, chia thành các batch nhỏ.
+    Tự động phân phối cho các API key và thử lại với key khác nếu một key hết quota.
     """
-    results = [None] * len(titles)
-    batch_size = max(1, len(titles) // len(api_keys))
-    batches = [titles[i:i+batch_size] for i in range(0, len(titles), batch_size)]
-    key_status = [True] * len(api_keys)  # True = còn dùng được
+    results = [None] * len(texts)
+    batch_size = 3  # Dịch 3 mục mỗi lần để tránh quá tải
+    untranslated_batches = list(enumerate([texts[i:i+batch_size] for i in range(0, len(texts), batch_size)]))
+    active_key_indices = list(range(len(api_keys)))
 
-    def translate_with_key(batch, key_idx):
-        if not key_status[key_idx]:
-            return None
+    def translate_batch(batch, key_idx):
         api_key = api_keys[key_idx]
         api_url = API_URL_TEMPLATE.format(api_key)
-        joined_titles = "\n".join(batch)
+        joined_texts = "\n".join(batch)
         prompt = (
             "Bạn là một chuyên gia dịch thuật tiếng Trung - Việt, có hiểu biết sâu sắc về game mobile Trung Quốc, đặc biệt là 'Nghịch Thủy Hàn Mobile'.\n"
             "Hãy dịch tất cả các đoạn sau sang **tiếng Việt tự nhiên, súc tích, đúng văn phong giới game thủ Việt**, giữ thứ tự dòng.\n\n"
@@ -73,68 +72,67 @@ def batch_translate_zh_to_vi_multi(titles, api_keys, retries=3, delay=10):
             "- Giữ nguyên tên kỹ năng, vũ khí, tính năng trong dấu [] hoặc 【】.\n"
             "- Ưu tiên từ ngữ phổ biến trong cộng đồng game như: 'build', 'phối đồ', 'đập đồ', 'lộ trình', 'trang bị xịn', 'ngoại hình đỉnh', 'top server'...\n"
             "- Các từ cố định phải dịch đúng theo bảng sau:\n"
-            "- 流 = lối chơi\n"
-            "- 木桩 = cọc gỗ\n"
-            "- 沧澜 = Thương Lan\n"
-            "- 潮光 = Triều Quang\n"
-            "- 玄机 = Huyền Cơ\n"
-            "- 龙吟 = Long Ngâm\n"
-            "- 神相 = Thần Tương\n"
-            "- 血河 = Huyết Hà\n"
-            "- 碎梦 = Toái Mộng\n"
-            "- 素问 = Tố Vấn\n"
-            "- 九灵 = Cửu Linh\n"
-            "- 铁衣 = Thiết Y\n\n"
+            "- 流 = lối chơi\n- 木桩 = cọc gỗ\n- 沧澜 = Thương Lan\n- 潮光 = Triều Quang\n- 玄机 = Huyền Cơ\n- 龙吟 = Long Ngâm\n- 神相 = Thần Tương\n- 血河 = Huyết Hà\n- 碎梦 = Toái Mộng\n- 素问 = Tố Vấn\n- 九灵 = Cửu Linh\n- 铁衣 = Thiết Y\n\n"
             "🚫 Không được thêm bất kỳ ghi chú, số thứ tự, hoặc phần mở đầu. Chỉ dịch từng dòng, giữ nguyên thứ tự gốc.\n\n"
-            + joined_titles
+            + joined_texts
         )
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": prompt}]}]}
-        for attempt in range(retries):
-            try:
-                response = requests.post(api_url, headers=headers, json=payload)
-                if response.status_code == 200:
-                    result = response.json()
-                    raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
-                    clean_text = cleanup_translation(raw_text)
-                    lines = [fix_terms(line.strip()) for line in clean_text.split("\n") if line.strip()]
-                    return lines
-                elif response.status_code == 429:
-                    print(f"🔑 Key {key_idx} đã hết quota. Tạm ngưng sử dụng key này.")
-                    key_status[key_idx] = False
-                else:
-                    print(f"⚠️ Lỗi API không xác định với key {key_idx}. Status: {response.status_code}")
-                    print(f"➡️ Chi tiết lỗi: {response.text}")
-                return None
-            except requests.exceptions.RequestException as e:
-                print(f"⚠️ Lỗi kết nối với key {key_idx}: {e}")
-                return None
-        print(f"❌ Key {key_idx} thử lại nhiều lần vẫn lỗi. Bỏ qua batch này.")
-        return None
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(api_keys)) as executor:
-        future_to_idx = {}
-        for idx, batch in enumerate(batches):
-            key_idx = idx % len(api_keys)
-            if not key_status[key_idx]:
-                continue
-            future = executor.submit(translate_with_key, batch, key_idx)
-            future_to_idx[future] = (idx, batch, key_idx)
-        for future in concurrent.futures.as_completed(future_to_idx):
-            idx, batch, key_idx = future_to_idx[future]
-            lines = future.result()
-            if lines is not None and len(lines) == len(batch):
-                start = idx * batch_size
-                results[start:start+len(batch)] = lines
-            elif not key_status[key_idx]:
-                print(f"⚠️ Batch {idx+1} không dịch được do key {key_idx} hết quota.")
+        try:
+            response = requests.post(api_url, headers=headers, json=payload, timeout=90)
+            if response.status_code == 200:
+                result = response.json()
+                raw_text = result["candidates"][0]["content"]["parts"][0]["text"]
+                lines = [fix_terms(line.strip()) for line in cleanup_translation(raw_text).split('\n') if line.strip()]
+                return lines, None
+            elif response.status_code == 429:
+                return None, "quota_exceeded"
             else:
-                print(f"⚠️ Batch {idx+1} không dịch được. Trả về nội dung gốc.")
-                start = idx * batch_size
-                results[start:start+len(batch)] = batch
-    if not any(key_status):
-        print("❌ Tất cả API key đều hết quota. Dừng dịch.")
-        return None
+                print(f"⚠️ Lỗi API không xác định với key {key_idx}. Status: {response.status_code}\n{response.text}")
+                return None, "api_error"
+        except requests.exceptions.RequestException as e:
+            print(f"⚠️ Lỗi kết nối với key {key_idx}: {e}")
+            return None, "connection_error"
+
+    while untranslated_batches and active_key_indices:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(active_key_indices)) as executor:
+            future_to_batch = {}
+            key_iterator = iter(active_key_indices)
+            # Gửi các batch chưa dịch đi
+            for batch_idx, batch_content in untranslated_batches:
+                try:
+                    key_idx = next(key_iterator)
+                    future = executor.submit(translate_batch, batch_content, key_idx)
+                    future_to_batch[future] = (batch_idx, batch_content, key_idx)
+                except StopIteration:
+                    break # Hết key để phân phối
+
+            processed_batches = []
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_idx, batch_content, key_idx = future_to_batch[future]
+                processed_batches.append((batch_idx, batch_content))
+                try:
+                    lines, error_type = future.result()
+                    if lines:
+                        start_pos = batch_idx * batch_size
+                        results[start_pos:start_pos + len(lines)] = lines
+                    elif error_type == "quota_exceeded":
+                        print(f"🔑 Key {key_idx} hết quota. Loại bỏ khỏi danh sách hoạt động.")
+                        if key_idx in active_key_indices:
+                            active_key_indices.remove(key_idx)
+                except Exception as exc:
+                    print(f"❌ Batch {batch_idx} gây ra exception: {exc}")
+
+            # Cập nhật danh sách các batch chưa dịch thành công
+            all_processed_indices = {item[0] for item in processed_batches}
+            untranslated_batches = [item for item in untranslated_batches if item[0] not in all_processed_indices]
+
+    # Điền nội dung gốc cho các phần không dịch được
+    for i, res in enumerate(results):
+        if res is None:
+            results[i] = texts[i]
+            print(f"⚠️ Không dịch được mục {i}, sử dụng nội dung gốc.")
+
     return results
 
 def fetch_articles(url):
